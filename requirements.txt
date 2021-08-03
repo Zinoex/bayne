@@ -5,6 +5,7 @@ sphinx-copybutton
 tqdm
 numpy
 matplotlib
+seaborn
 scikit-learn
 torch
 PyHamcrest

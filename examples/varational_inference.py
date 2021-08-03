@@ -6,7 +6,7 @@ from tqdm import trange, tqdm
 
 from bnn.variational_inference import BaseVariationalBNN, VariationalLinear
 from examples.test import test
-from examples.weather import WeatherHistoryDataset, total_columns
+from examples.weather import WeatherHistoryDataset, weather_features
 
 
 ################################################################
@@ -60,7 +60,7 @@ def train(model):
 
 
 def main():
-    model = ExampleVariationalBNN(total_columns)
+    model = ExampleVariationalBNN(weather_features)
     train(model)
     test(model)
 
