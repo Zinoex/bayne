@@ -9,7 +9,6 @@ torch
 PyHamcrest
 bs4
 flask
-ray[tune]
 sphinxcontrib-katex
 
 # PyTorch Theme
