@@ -1,0 +1,18 @@
+sphinx==1.8.2
+sphinx-gallery==0.3.1
+docutils==0.16
+sphinx-copybutton
+tqdm
+numpy
+matplotlib
+torch
+PyHamcrest
+bs4
+flask
+ray[tune]
+
+# PyTorch Theme
+-e git+git://github.com/pytorch/pytorch_sphinx_theme.git#egg=pytorch_sphinx_theme
+
+sphinxcontrib.katex
+# to run examples
