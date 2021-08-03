@@ -1,56 +1,57 @@
-from torch import nn, optim
+import torch
+from torch import nn, optim, distributions
 from torch.nn import MSELoss
 from torch.utils.data import DataLoader
 from tqdm import trange, tqdm
 
-from bnn.mcdropout import BaseMCDropout
+from bnn.variational_inference import BaseVariationalBNN, VariationalLinear
 from examples.test import test
 from examples.weather import WeatherHistoryDataset, total_columns
 
 
 ################################################################
-# An example of Monte Carlo Dropout for regression on
+# An example of variational inference BNN for regression on
 # a Kaggle weather history dataset
 ################################################################
 
 
-class ExampleMCDropout(BaseMCDropout):
-    def __init__(self, in_features, alpha=0.2):
+class ExampleVariationalBNN(BaseVariationalBNN):
+    def __init__(self, in_features):
         super().__init__()
 
         self.model = nn.Sequential(
-            nn.Dropout(alpha),
-            nn.Linear(in_features, 128),
+            VariationalLinear(in_features, 32),
             nn.ReLU(),
-            nn.Dropout(alpha),
-            nn.Linear(128, 64),
+            VariationalLinear(32, 16),
             nn.ReLU(),
-            nn.Dropout(alpha),
-            nn.Linear(64, 1)
+            VariationalLinear(16, 1)
         )
 
     def forward(self, x):
-        self.assert_dropout()
         return self.model(x)
 
 
 def train(model):
     num_epochs = 100
     num_samples = 10
-    criterion = MSELoss()
-    optimizer = optim.Adam(model.parameters())
+    optimizer = optim.SGD(model.parameters(), lr=1e-3)
 
     dataset = WeatherHistoryDataset(train=True)
     dataloader = DataLoader(dataset, batch_size=100, shuffle=True, num_workers=0)
 
+    num_batches = len(dataloader)
+
     for epoch in trange(num_epochs, desc='Epoch'):
         for X, y in tqdm(dataloader, desc='Iteration'):
             optimizer.zero_grad(set_to_none=True)
+            model.zero_kl()
 
             X, y = X.repeat(num_samples, 1), y.repeat(num_samples, 1)
 
             y_pred = model(X)
-            loss = criterion(y_pred, y)
+            sigma = torch.full_like(y_pred, 1.0)
+            dist = distributions.Normal(y_pred, sigma)
+            loss = -dist.log_prob(y).mean() + model.kl_loss() / num_batches
             loss.backward()
 
             optimizer.step()
@@ -59,7 +60,7 @@ def train(model):
 
 
 def main():
-    model = ExampleMCDropout(total_columns)
+    model = ExampleVariationalBNN(total_columns)
     train(model)
     test(model)
 

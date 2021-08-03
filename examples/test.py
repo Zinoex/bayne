@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from matplotlib import pyplot as plt
 from torch.nn import MSELoss
@@ -18,10 +19,14 @@ def test(model):
     dataloader = DataLoader(dataset, batch_size=len(dataset), num_workers=0)
     X, y = next(iter(dataloader))
 
-    y_pred = model.predict_mean(X, num_samples=num_samples)
+    y_dist = model.predict_dist(X, num_samples=num_samples)
+    y_pred = y_dist.mean(0)
+    y_var = y_dist.var(0)
+
     avg_loss = criterion(y_pred, y)
 
-    print(f'Average loss: {avg_loss.item()}')
+    print(f'Average MSE: {avg_loss.item()}')
+    print(f'Average var: {y_var.mean()}')
 
     # Distribution test
     dataloader = DataLoader(dataset, num_workers=0)

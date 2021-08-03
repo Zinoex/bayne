@@ -45,11 +45,11 @@ class VariationalLinear(nn.Module):
     def reset_parameters(self) -> None:
         init_sigma = np.sqrt(self.prior_pi1 * self.prior_sigma1 ** 2 + self.prior_pi2 * self.prior_sigma2 ** 2)
 
-        init.normal(self.weight_mu, 0, init_sigma)
+        init.normal_(self.weight_mu, 0, init_sigma)
         init.zeros_(self.weight_rho)
 
         if self.include_bias is not None:
-            init.normal(self.bias_mu, 0, init_sigma)
+            init.normal_(self.bias_mu, 0, init_sigma)
             init.zeros_(self.bias_rho)
 
     def freeze(self):
@@ -86,7 +86,7 @@ class VariationalLinear(nn.Module):
         log_prior_prob = torch.log(self.prior_pi1 * self.prior_dist1.log_prob(w).exp() +
                                    self.prior_pi2 * self.prior_dist2.log_prob(w).exp())
 
-        self.kl_loss = variational_dist.log_prob(w) - log_prior_prob + self.kl_loss
+        self.kl_loss = (variational_dist.log_prob(w) - log_prior_prob).sum() + self.kl_loss
 
 
 class BaseVariationalBNN(nn.Module):
@@ -111,7 +111,8 @@ class BaseVariationalBNN(nn.Module):
                 for submodule in module.children():
                     _freeze(submodule)
 
-        _freeze(self)
+        for submodule in self.children():
+            _freeze(submodule)
 
     def unfreeze(self):
         def _unfreeze(module):
@@ -121,4 +122,25 @@ class BaseVariationalBNN(nn.Module):
                 for submodule in module.children():
                     _unfreeze(submodule)
 
-        _unfreeze(self)
+        for submodule in self.children():
+            _unfreeze(submodule)
+
+    def kl_loss(self):
+        def _kl_loss(module):
+            if hasattr(module, 'kl_loss'):
+                return module.kl_loss
+            else:
+                return sum([_kl_loss(submodule) for submodule in module.children()])
+
+        return sum([_kl_loss(submodule) for submodule in self.children()])
+
+    def zero_kl(self):
+        def _zero_kl(module):
+            if hasattr(module, 'kl_loss'):
+                module.kl_loss = 0
+            else:
+                for submodule in module.children():
+                    _zero_kl(submodule)
+
+        for submodule in self.children():
+            _zero_kl(submodule)
