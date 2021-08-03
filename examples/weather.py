@@ -1,14 +1,12 @@
 import os
 
 import torch
-from matplotlib import pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch.utils import data
 
 import numpy as np
 import pandas as pd
-import seaborn as sns
 
 ########################################################
 # The dataset is a Kaggle weather history dataset where

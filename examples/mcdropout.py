@@ -4,13 +4,13 @@ from torch.utils.data import DataLoader
 from tqdm import trange, tqdm
 
 from bnn.mcdropout import BaseMCDropout
+from examples.noisy_sine import NoisySineDataset
 from examples.test import test
-from examples.weather import WeatherHistoryDataset, weather_features
 
 
 ################################################################
 # An example of Monte Carlo Dropout for regression on
-# a Kaggle weather history dataset
+# a noisy sine dataset
 ################################################################
 
 
@@ -36,18 +36,15 @@ class ExampleMCDropout(BaseMCDropout):
 
 def train(model):
     num_epochs = 100
-    num_samples = 10
     criterion = MSELoss()
     optimizer = optim.Adam(model.parameters())
 
-    dataset = WeatherHistoryDataset(train=True)
+    dataset = NoisySineDataset()
     dataloader = DataLoader(dataset, batch_size=100, shuffle=True, num_workers=0)
 
     for epoch in trange(num_epochs, desc='Epoch'):
         for X, y in tqdm(dataloader, desc='Iteration'):
             optimizer.zero_grad(set_to_none=True)
-
-            X, y = X.repeat(num_samples, 1), y.repeat(num_samples, 1)
 
             y_pred = model(X)
             loss = criterion(y_pred, y)
@@ -59,7 +56,7 @@ def train(model):
 
 
 def main():
-    model = ExampleMCDropout(weather_features)
+    model = ExampleMCDropout(1)
     train(model)
     test(model)
 

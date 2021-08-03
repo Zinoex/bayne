@@ -5,13 +5,13 @@ from torch.utils.data import DataLoader
 from tqdm import trange, tqdm
 
 from bnn.variational_inference import BaseVariationalBNN, VariationalLinear
+from examples.noisy_sine import NoisySineDataset
 from examples.test import test
-from examples.weather import WeatherHistoryDataset, weather_features
 
 
 ################################################################
 # An example of variational inference BNN for regression on
-# a Kaggle weather history dataset
+# a noisy sine dataset
 ################################################################
 
 
@@ -20,11 +20,11 @@ class ExampleVariationalBNN(BaseVariationalBNN):
         super().__init__()
 
         self.model = nn.Sequential(
-            VariationalLinear(in_features, 32),
+            VariationalLinear(in_features, 20),
             nn.ReLU(),
-            VariationalLinear(32, 16),
+            VariationalLinear(20, 20),
             nn.ReLU(),
-            VariationalLinear(16, 1)
+            VariationalLinear(20, 1)
         )
 
     def forward(self, x):
@@ -33,11 +33,10 @@ class ExampleVariationalBNN(BaseVariationalBNN):
 
 def train(model):
     num_epochs = 100
-    num_samples = 10
-    optimizer = optim.SGD(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=0.08)
 
-    dataset = WeatherHistoryDataset(train=True)
-    dataloader = DataLoader(dataset, batch_size=100, shuffle=True, num_workers=0)
+    dataset = NoisySineDataset()
+    dataloader = DataLoader(dataset, batch_size=10, shuffle=True, num_workers=0)
 
     num_batches = len(dataloader)
 
@@ -46,12 +45,10 @@ def train(model):
             optimizer.zero_grad(set_to_none=True)
             model.zero_kl()
 
-            X, y = X.repeat(num_samples, 1), y.repeat(num_samples, 1)
-
             y_pred = model(X)
             sigma = torch.full_like(y_pred, 1.0)
             dist = distributions.Normal(y_pred, sigma)
-            loss = -dist.log_prob(y).mean() + model.kl_loss() / num_batches
+            loss = -dist.log_prob(y).sum() + model.kl_loss() / num_batches
             loss.backward()
 
             optimizer.step()
@@ -60,7 +57,7 @@ def train(model):
 
 
 def main():
-    model = ExampleVariationalBNN(weather_features)
+    model = ExampleVariationalBNN(1)
     train(model)
     test(model)
 
