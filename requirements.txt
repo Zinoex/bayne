@@ -5,6 +5,7 @@ sphinx-copybutton
 tqdm
 numpy
 matplotlib
+scikit-learn
 torch
 PyHamcrest
 bs4
@@ -13,3 +14,5 @@ sphinxcontrib-katex
 
 # PyTorch Theme
 -e git+git://github.com/pytorch/pytorch_sphinx_theme.git#egg=pytorch_sphinx_theme
+
+pandas
