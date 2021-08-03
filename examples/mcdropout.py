@@ -3,7 +3,7 @@ from torch.nn import MSELoss
 from torch.utils.data import DataLoader
 from tqdm import trange, tqdm
 
-from bnn.models.mcdropout import BaseMCDropout
+from bnn.mcdropout import BaseMCDropout
 from examples.test import test
 from examples.weather import WeatherHistoryDataset, total_columns
 
