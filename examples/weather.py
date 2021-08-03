@@ -2,6 +2,7 @@ import os
 
 import torch
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from torch.utils import data
 
 import numpy as np
@@ -29,10 +30,18 @@ total_columns = unique_precip_type + 1
 
 df = pd.get_dummies(df).astype(np.float32)
 
-y = df[['Temperature (C)']].values
 X = df[['Humidity', 'Precip Type_N/A', 'Precip Type_rain', 'Precip Type_snow']].values
+y = df[['Temperature (C)']].values
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+X_scaler = StandardScaler()
+y_scaler = StandardScaler()
+
+X_train = X_scaler.fit_transform(X_train)
+X_test = X_scaler.transform(X_test)
+y_train = y_scaler.fit_transform(y_train)
+y_test = y_scaler.transform(y_test)
 
 
 class WeatherHistoryDataset(data.Dataset):
