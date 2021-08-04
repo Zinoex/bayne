@@ -7,11 +7,11 @@ import torch.nn.functional as F
 from bnn.distributions import PriorWeightDistribution, PosteriorWeightDistribution
 
 
-class BayesianLayer(nn.Module):
+class VariationalBayesianLayer(nn.Module):
     pass
 
 
-class VariationalLinear(BayesianLayer):
+class VariationalLinear(VariationalBayesianLayer):
     def __init__(self, in_features: int, out_features: int, bias: bool = True,
                  prior=PriorWeightDistribution(),
                  device=None, dtype=None):
@@ -77,7 +77,7 @@ class BaseVariationalBNN(nn.Module):
 
     def freeze(self):
         def _freeze(module):
-            if isinstance(module, BayesianLayer):
+            if isinstance(module, VariationalBayesianLayer):
                 module.freeze()
             else:
                 for submodule in module.children():
@@ -87,7 +87,7 @@ class BaseVariationalBNN(nn.Module):
 
     def unfreeze(self):
         def _unfreeze(module):
-            if isinstance(module, BayesianLayer):
+            if isinstance(module, VariationalBayesianLayer):
                 module.unfreeze()
             else:
                 for submodule in module.children():
@@ -97,7 +97,7 @@ class BaseVariationalBNN(nn.Module):
 
     def kl_loss(self):
         def _kl_loss(module):
-            if isinstance(module, BayesianLayer):
+            if isinstance(module, VariationalBayesianLayer):
                 return module.kl_loss
             else:
                 child_kl = [_kl_loss(submodule) for submodule in module.children()]
@@ -111,7 +111,7 @@ class BaseVariationalBNN(nn.Module):
 
     def zero_kl(self):
         def _zero_kl(module):
-            if isinstance(module, BayesianLayer):
+            if isinstance(module, VariationalBayesianLayer):
                 module.kl_loss = 0
             else:
                 for submodule in module.children():
