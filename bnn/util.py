@@ -1,5 +1,9 @@
 import functools
+import random
 import time
+
+import numpy as np
+import torch
 
 
 def timer(func):
@@ -15,3 +19,11 @@ def timer(func):
         return value
 
     return wrapper_timer
+
+
+def set_random_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)

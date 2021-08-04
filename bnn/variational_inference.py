@@ -4,53 +4,38 @@ from torch import nn, distributions
 from torch.nn import init
 import torch.nn.functional as F
 
+from bnn.distributions import PriorWeightDistribution, PosteriorWeightDistribution
 
-class VariationalLinear(nn.Module):
-    def __init__(self, in_features: int, out_features: int,
-                 prior_sigma1=1.5,
-                 prior_sigma2=0.1,
-                 prior_pi=0.5,
-                 bias: bool = True,
+
+class BayesianLayer(nn.Module):
+    pass
+
+
+class VariationalLinear(BayesianLayer):
+    def __init__(self, in_features: int, out_features: int, bias: bool = True,
+                 prior=PriorWeightDistribution(),
                  device=None, dtype=None):
         super().__init__()
 
-        self.prior_sigma1 = prior_sigma1
-        self.prior_sigma2 = prior_sigma2
-        self.prior_pi1 = prior_pi
-        self.prior_pi2 = 1.0 - prior_pi
-
-        self.prior_dist1 = distributions.Normal(0.0, self.prior_sigma1)
-        self.prior_dist2 = distributions.Normal(0.0, self.prior_sigma2)
+        self.prior = prior
 
         factory_kwargs = {'device': device, 'dtype': dtype}
 
-        self.weight_mu = nn.Parameter(torch.empty((out_features, in_features), **factory_kwargs))
-        # Store rho = log(exp(sigma) - 1) to allow numerical stability and
-        # free parameterization to positive variance, R -> R+
-        self.weight_rho = nn.Parameter(torch.empty((out_features, in_features), **factory_kwargs))
+        self.weight_mu = nn.Parameter(torch.empty((out_features, in_features), **factory_kwargs).normal_(0, 0.1))
+        self.weight_rho = nn.Parameter(torch.empty((out_features, in_features), **factory_kwargs).normal_(-7, 0.1))
+        self.weight_posterior = PosteriorWeightDistribution(self.weight_mu, self.weight_rho)
 
         self.include_bias = bias
         if bias:
-            self.bias_mu = nn.Parameter(torch.empty(out_features, **factory_kwargs))
-            self.bias_rho = nn.Parameter(torch.empty(out_features, **factory_kwargs))
+            self.bias_mu = nn.Parameter(torch.empty(out_features, **factory_kwargs).normal_(0, 0.1))
+            self.bias_rho = nn.Parameter(torch.empty(out_features, **factory_kwargs).normal_(-7, 0.1))
+            self.bias_posterior = PosteriorWeightDistribution(self.bias_mu, self.bias_rho)
         else:
             self.register_parameter('bias_mu', None)
             self.register_parameter('bias_rho', None)
 
-        self.reset_parameters()
-
         self.kl_loss = 0
         self.frozen = False
-
-    def reset_parameters(self) -> None:
-        init_sigma = np.sqrt(self.prior_pi1 * self.prior_sigma1 ** 2 + self.prior_pi2 * self.prior_sigma2 ** 2)
-
-        init.normal_(self.weight_mu, 0, init_sigma)
-        init.zeros_(self.weight_rho)
-
-        if self.include_bias is not None:
-            init.normal_(self.bias_mu, 0, init_sigma)
-            init.zeros_(self.bias_rho)
 
     def freeze(self):
         self.frozen = True
@@ -59,34 +44,21 @@ class VariationalLinear(nn.Module):
         self.frozen = False
 
     def forward(self, x):
-        # Apply sigma = log(1 + exp(rho)) to allow free parameterization to positive variance, R -> R+
-        weight_sigma = F.softplus(self.weight_rho, beta=1, threshold=20)
-        if self.include_bias:
-            bias_sigma = F.softplus(self.bias_rho, beta=1, threshold=20)
-
         if self.frozen:
-            weight = self.weight_mu
-            bias = self.bias_mu
-        else:
-            weight = self.weight_mu + weight_sigma * torch.randn_like(self.weight_mu)
-            if self.include_bias:
-                bias = self.bias_mu + bias_sigma * torch.randn_like(self.bias_mu)
-            else:
-                bias = None
+            return F.linear(x, self.weight_mu, self.bias_mu)
 
-        self.update_kl_loss(weight, self.weight_mu, weight_sigma)
+        w = self.weight_posterior.sample()
+
+        self.kl_loss = self.weight_posterior.log_posterior(w) - self.prior.log_prior(w)
+
         if self.include_bias:
-            self.update_kl_loss(bias, self.bias_mu, bias_sigma)
+            b = self.bias_posterior.sample()
 
-        return F.linear(x, weight, bias)
+            self.kl_loss += self.bias_posterior.log_posterior(b) - self.prior.log_prior(b)
+        else:
+            b = None
 
-    def update_kl_loss(self, w, mu, sigma):
-        variational_dist = distributions.Normal(mu, sigma)
-
-        log_prior_prob = torch.log(self.prior_pi1 * self.prior_dist1.log_prob(w).exp() +
-                                   self.prior_pi2 * self.prior_dist2.log_prob(w).exp())
-
-        self.kl_loss = (variational_dist.log_prob(w) - log_prior_prob).sum() + self.kl_loss
+        return F.linear(x, w, b)
 
 
 class BaseVariationalBNN(nn.Module):
@@ -105,42 +77,57 @@ class BaseVariationalBNN(nn.Module):
 
     def freeze(self):
         def _freeze(module):
-            if hasattr(module, 'freeze'):
+            if isinstance(module, BayesianLayer):
                 module.freeze()
             else:
                 for submodule in module.children():
                     _freeze(submodule)
 
-        for submodule in self.children():
-            _freeze(submodule)
+        _freeze(self)
 
     def unfreeze(self):
         def _unfreeze(module):
-            if hasattr(module, 'unfreeze'):
+            if isinstance(module, BayesianLayer):
                 module.unfreeze()
             else:
                 for submodule in module.children():
                     _unfreeze(submodule)
 
-        for submodule in self.children():
-            _unfreeze(submodule)
+        _unfreeze(self)
 
     def kl_loss(self):
         def _kl_loss(module):
-            if hasattr(module, 'kl_loss'):
+            if isinstance(module, BayesianLayer):
                 return module.kl_loss
             else:
-                return sum([_kl_loss(submodule) for submodule in module.children()])
+                child_kl = [_kl_loss(submodule) for submodule in module.children()]
 
-        return sum([_kl_loss(submodule) for submodule in self.children()])
+                if len(child_kl) > 0:
+                    return torch.stack(child_kl, dim=0).sum(dim=0)
+                else:
+                    return torch.zeros(1)[0]
+
+        return _kl_loss(self)
 
     def zero_kl(self):
         def _zero_kl(module):
-            if hasattr(module, 'kl_loss'):
+            if isinstance(module, BayesianLayer):
                 module.kl_loss = 0
             else:
                 for submodule in module.children():
                     _zero_kl(submodule)
 
-        for submodule in self.children():
-            _zero_kl(submodule)
+        _zero_kl(self)
+
+    def sample_elbo(self, idx, x, y, criterion, num_samples, num_batches):
+        loss = 0
+        for _ in range(num_samples):
+            self.zero_kl()
+
+            y_pred = self(x)
+            loss += criterion(y_pred, y)
+
+            pi = 1 / num_batches
+            loss += self.kl_loss() * pi
+
+        return loss / num_samples

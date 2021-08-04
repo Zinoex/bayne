@@ -22,17 +22,18 @@ def test(model):
 
     print(f'Average MSE: {avg_loss.item()}')
 
-    X_test = torch.linspace(-3.0, 3.0, 1000).view(-1, 1)
-    y_dist = model.predict_dist(X_test, num_samples=num_samples)[..., 0]
-    X_test = X_test[..., 0]
+    X_test = torch.linspace(-2.0, 2.0, 1000).view(-1, 1)
+    y_dist = model.predict_dist(X_test, num_samples=num_samples)
+    X_test, y_dist = X_test[..., 0], y_dist[..., 0]
 
     y_mean = y_dist.mean(0)
     y_sigma = y_dist.std(0)
 
+    plt.ylim(-4, 4)
+
     plt.plot(X_test, y_mean, 'r-', label='Predictive mean')
     plt.scatter(X, y, marker='+', label='Training data')
-    plt.fill_between(X_test.ravel(), y_mean + 2 * y_sigma, y_mean - 2 * y_sigma,
-                     alpha=0.5, label='Epistemic Uncertainty')
+    plt.fill_between(X_test.ravel(), y_mean + 2 * y_sigma, y_mean - 2 * y_sigma, alpha=0.5, label='Epistemic Uncertainty')
     plt.title('Prediction')
     plt.legend()
     plt.show()

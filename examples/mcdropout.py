@@ -1,4 +1,4 @@
-from torch import nn, optim
+from torch import nn, optim, distributions
 from torch.nn import MSELoss
 from torch.utils.data import DataLoader
 from tqdm import trange, tqdm
@@ -35,12 +35,12 @@ class ExampleMCDropout(BaseMCDropout):
 
 
 def train(model):
-    num_epochs = 100
+    num_epochs = 1000
     criterion = MSELoss()
     optimizer = optim.Adam(model.parameters())
 
     dataset = NoisySineDataset()
-    dataloader = DataLoader(dataset, batch_size=100, shuffle=True, num_workers=0)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=0)
 
     for epoch in trange(num_epochs, desc='Epoch'):
         for X, y in tqdm(dataloader, desc='Iteration'):

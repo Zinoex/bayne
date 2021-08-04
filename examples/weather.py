@@ -16,6 +16,7 @@ import pandas as pd
 #
 # https://www.kaggle.com/budincsevity/szeged-weather
 ########################################################
+from torch.utils.data import TensorDataset
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 
@@ -30,24 +31,17 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_
 X_scaler = StandardScaler()
 y_scaler = StandardScaler()
 
-X_train = X_scaler.fit_transform(X_train)
-X_test = X_scaler.transform(X_test)
-y_train = y_scaler.fit_transform(y_train)
-y_test = y_scaler.transform(y_test)
+X_train = torch.tensor(X_scaler.fit_transform(X_train))
+X_test = torch.tensor(X_scaler.transform(X_test))
+y_train = torch.tensor(y_scaler.fit_transform(y_train))
+y_test = torch.tensor(y_scaler.transform(y_test))
 
 weather_features = X.shape[1]
 
 
-class WeatherHistoryDataset(data.Dataset):
+class WeatherHistoryDataset(TensorDataset):
     def __init__(self, train=True):
-        self.X = X_train if train else X_test
-        self.y = y_train if train else y_test
-
-    def __len__(self):
-        return self.X.shape[0]
-
-    def __getitem__(self, idx):
-        if torch.is_tensor(idx):
-            idx = idx.tolist()
-
-        return self.X[idx], self.y[idx]
+        if train:
+            super(WeatherHistoryDataset, self).__init__(X_train, y_train)
+        else:
+            super(WeatherHistoryDataset, self).__init__(X_test, y_test)
