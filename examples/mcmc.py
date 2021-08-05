@@ -39,13 +39,13 @@ def train(model):
     def nll():
         y_pred = model(X)
 
-        dist = distributions.Normal(y, 0.025)
+        dist = distributions.Normal(y, 0.05)
         neg_log_prob = -dist.log_prob(y_pred).mean()
 
         print(f'NLL: {neg_log_prob.item()}')
         return neg_log_prob
 
-    model.sample(nll, reject=10)
+    model.sample(nll, reject=20)
 
 
 def main():

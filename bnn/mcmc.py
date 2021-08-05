@@ -8,11 +8,11 @@ from bnn.sampler import HamiltonianMonteCarlo
 
 
 class MonteCarloBNN(nn.Module):
-    def __init__(self, network):
+    def __init__(self, network, step_size=0.001, num_steps=100):
         super().__init__()
 
         self.network = network
-        self.sampler = HamiltonianMonteCarlo(network.parameters(), step_size=0.001, num_steps=100)
+        self.sampler = HamiltonianMonteCarlo(network.parameters(), step_size=step_size, num_steps=num_steps)
         self.states = []
 
     def sample(self, nll, num_samples=1000, reject=0, progress_bar=True):
