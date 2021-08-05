@@ -40,11 +40,11 @@ def train(model):
 
     last_log = time.time()
 
-    def nll():
+    def negative_log_prob():
         y_pred = model(X)
 
-        dist = distributions.Normal(y, 0.05)
-        neg_log_prob = -dist.log_prob(y_pred).mean()
+        dist = distributions.Normal(y, 0.1)
+        neg_log_prob = -dist.log_prob(y_pred).sum()
 
         nonlocal last_log
         now = time.time()
@@ -52,9 +52,9 @@ def train(model):
             print(f'NLL: {neg_log_prob.item()}')
             last_log = now
 
-        return neg_log_prob
+        return neg_log_prob - model.prior()
 
-    model.sample(nll, reject=20)
+    model.sample(negative_log_prob, num_samples=1000, reject=20)
 
 
 def main():

@@ -1,21 +1,22 @@
 import copy
 
 import torch
-from torch import nn
+from torch import nn, distributions
 from tqdm import trange
 
+from bnn.distributions import PriorWeightDistribution
 from bnn.sampler import HamiltonianMonteCarlo
 
 
 class MonteCarloBNN(nn.Module):
-    def __init__(self, network, step_size=0.001, num_steps=100):
+    def __init__(self, network, step_size=0.0005, num_steps=100):
         super().__init__()
 
         self.network = network
         self.sampler = HamiltonianMonteCarlo(network.parameters(), step_size=step_size, num_steps=num_steps)
         self.states = []
 
-    def sample(self, nll, num_samples=1000, reject=0, progress_bar=True):
+    def sample(self, negative_log_prob, num_samples=1000, reject=0, progress_bar=True):
         self.states = []
         num_accept = 0
 
@@ -25,7 +26,7 @@ class MonteCarloBNN(nn.Module):
             if idx >= 0:
                 self.states.append(copy.deepcopy(self.network.state_dict()))
 
-            accept = self.sampler.step(nll)
+            accept = self.sampler.step(negative_log_prob)
             if accept:
                 num_accept += 1
 
@@ -57,3 +58,7 @@ class MonteCarloBNN(nn.Module):
         self.network.load_state_dict(self.states[0])
 
         super().load_state_dict(state_dict, strict)
+
+    def prior(self):
+        dist = PriorWeightDistribution()
+        return torch.stack([dist.log_prior(w).sum() for w in self.network.parameters()]).sum()

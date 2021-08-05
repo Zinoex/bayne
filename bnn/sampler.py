@@ -32,10 +32,10 @@ class HamiltonianMonteCarlo(optim.Optimizer):
 
         self.step_size = step_size
         self.num_steps = num_steps
-        self.kinetic_energy_type = 'dot_product'  # Choices: log_prob_sum, dot_product
+        self.kinetic_energy_type = 'log_prob_sum'  # Choices: log_prob_sum, dot_product
 
     @torch.no_grad()
-    def step(self, nll):
+    def step(self, negative_log_prob):
         """
         Performs a single forward evolution of Hamiltonian Monte Carlo.
         This should be repeated numerous times to get multiple parameter samples
@@ -56,7 +56,7 @@ class HamiltonianMonteCarlo(optim.Optimizer):
         # Autograd magic
         @torch.enable_grad()
         def dVdq():
-            output = nll()
+            output = negative_log_prob()
 
             return torch.autograd.grad(output, q0)
 
@@ -65,7 +65,7 @@ class HamiltonianMonteCarlo(optim.Optimizer):
         p0 = TensorList([momentum_dist.sample(param.size()) for param in q0])
 
         # Compute initial energy before we start changing parameters
-        start_log_p = nll() - self.kinetic_energy(p0)
+        start_log_p = negative_log_prob() + self.kinetic_energy(p0)
 
         # Save initial weights to recover if we failed to accept
         q_start = copy.deepcopy(q0)
@@ -74,7 +74,7 @@ class HamiltonianMonteCarlo(optim.Optimizer):
         q_new, p_new = self.leapfrog(q0, p0, dVdq)
 
         # Check Metropolis acceptance criterion
-        new_log_p = nll() - self.kinetic_energy(p_new)
+        new_log_p = negative_log_prob() + self.kinetic_energy(p_new)
 
         acceptance_probability = np.exp(start_log_p - new_log_p)
         accept = np.random.rand() < acceptance_probability
@@ -89,9 +89,9 @@ class HamiltonianMonteCarlo(optim.Optimizer):
     def kinetic_energy(self, p):
         if self.kinetic_energy_type == 'log_prob_sum':
             momentum_dist = distributions.Normal(0, 1)
-            return torch.stack([momentum_dist.log_prob(param).sum() for param in p]).sum()
+            return -torch.stack([momentum_dist.log_prob(param).sum() for param in p]).sum()
         elif self.kinetic_energy_type == 'dot_product':
-            return torch.stack([(param ** 2).sum() for param in p]).sum()
+            return torch.stack([(param ** 2).sum() for param in p]).sum() / 2
         else:
             raise NotImplementedError()
 
