@@ -4,12 +4,13 @@ from matplotlib import pyplot as plt
 from torch.nn import MSELoss
 from torch.utils.data import DataLoader
 
+from bnn.util import timer
 from examples.noisy_sine import NoisySineDataset
 
 
 @torch.no_grad()
 def test(model, label):
-    num_samples = 500
+    num_samples = 1000
 
     criterion = MSELoss()
 
@@ -17,7 +18,7 @@ def test(model, label):
     dataloader = DataLoader(dataset, batch_size=len(dataset), num_workers=0)
     X, y = next(iter(dataloader))
 
-    y_mean = model.predict_mean(X, num_samples=num_samples)
+    y_mean = timer(model.predict_mean)(X, num_samples=num_samples)
     avg_loss = criterion(y_mean, y)
 
     print(f'Average MSE: {avg_loss.item()}')

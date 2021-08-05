@@ -1,3 +1,5 @@
+import time
+
 from torch import nn, optim, distributions
 from torch.nn import Linear
 from torch.utils.data import DataLoader
@@ -36,13 +38,20 @@ def train(model):
     dataloader = DataLoader(dataset, batch_size=len(dataset), shuffle=True, num_workers=0)
     X, y = next(iter(dataloader))
 
+    last_log = time.time()
+
     def nll():
         y_pred = model(X)
 
         dist = distributions.Normal(y, 0.05)
         neg_log_prob = -dist.log_prob(y_pred).mean()
 
-        print(f'NLL: {neg_log_prob.item()}')
+        nonlocal last_log
+        now = time.time()
+        if now - last_log > 0.2:  # 0.2s
+            print(f'NLL: {neg_log_prob.item()}')
+            last_log = now
+
         return neg_log_prob
 
     model.sample(nll, reject=20)
