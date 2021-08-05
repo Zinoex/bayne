@@ -40,8 +40,8 @@ def train(model):
     num_batches = len(dataloader)
 
     def criterion(output, target):
-        dist = distributions.Normal(target, 0.025)
-        return -dist.log_prob(output).mean()
+        dist = distributions.Normal(target, 0.1)
+        return -dist.log_prob(output).sum()
 
     for epoch in trange(num_epochs, desc='Epoch'):
         for idx, (X, y) in enumerate(tqdm(dataloader, desc='Iteration')):
