@@ -21,10 +21,10 @@ class ExampleMCDropout(BaseMCDropout):
         self.model = nn.Sequential(
             nn.Dropout(alpha),
             nn.Linear(in_features, 128),
-            nn.ReLU(),
+            nn.SiLU(),
             nn.Dropout(alpha),
             nn.Linear(128, 64),
-            nn.ReLU(),
+            nn.SiLU(),
             nn.Dropout(alpha),
             nn.Linear(64, 1)
         )
