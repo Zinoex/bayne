@@ -1,8 +1,29 @@
 import copy
+from typing import List
 
 import numpy as np
 import torch
 from torch import optim, distributions
+
+
+class TensorList(list):
+    def __neg__(self):
+        return TensorList([-x for x in self])
+
+    def __iadd__(self, other):
+        for x, x_prime in zip(self, other):
+            x.add_(x_prime)
+
+        return self
+
+    def __isub__(self, other):
+        for x, x_prime in zip(self, other):
+            x.sub_(x_prime)
+
+        return self
+
+    def __mul__(self, other):
+        return TensorList([x * other for x in self])
 
 
 class HamiltonianMonteCarlo(optim.Optimizer):
@@ -23,19 +44,20 @@ class HamiltonianMonteCarlo(optim.Optimizer):
         the parameters space directly on this network (using pass by reference).
         Therefore, we assume it is a parameterless function.
         """
-        # autograd magic
-        dVdq = grad(negative_log_prob)
 
         # Collect q0 - note that this is just a reference copy;
         # not a deep copy (important to leapfrog and acceptance step).
-        q0 = []
+        q0 = TensorList()
         for group in self.param_groups:
             for param in group['params']:
                 q0.append(param)
 
+        # autograd magic
+        dVdq = grad(negative_log_prob)
+
         # Sample initial momentum
         momentum_dist = distributions.Normal(0, 1)
-        p0 = [momentum_dist.sample(param.size()) for param in q0]
+        p0 = TensorList([momentum_dist.sample(param.size()) for param in q0])
 
         # Compute initial energy before we start changing parameters
         start_log_p = negative_log_prob() - torch.stack([momentum_dist.log_prob(param).sum() for param in p0]).sum()
@@ -57,21 +79,16 @@ class HamiltonianMonteCarlo(optim.Optimizer):
                 q0_tensor.copy_(q_start_tensor)
 
     @torch.no_grad()
-    def leapfrog(self, q, p, dVdq):
+    def leapfrog(self, q: TensorList, p: TensorList, dVdq):
         # We don't take a step backwards, but just move the negation from dVdq because
         # negation of a list is rarely a good idea.
-        self.update_variable(p, dVdq(q), -self.step_size / 2)
+        p -= TensorList(dVdq(q)) * (self.step_size / 2)
 
         for _ in range(self.num_steps - 1):
-            self.update_variable(q, p, self.step_size)
-            self.update_variable(p, dVdq(q), -self.step_size)
+            q -= p * self.step_size
+            p -= TensorList(dVdq(q)) * self.step_size
 
-        self.update_variable(q, p, self.step_size)
-        self.update_variable(p, dVdq(q), -self.step_size / 2)
+        q -= p * self.step_size
+        p -= TensorList(dVdq(q)) * (self.step_size / 2)
 
         return q, -p
-
-    @torch.no_grad()
-    def update_variable(self, x, dx, step_size):
-        for x_prime, dx_prime in zip(x, dx):
-            x_prime.add_(step_size * dx_prime)
