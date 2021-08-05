@@ -59,6 +59,6 @@ class MonteCarloBNN(nn.Module):
 
         super().load_state_dict(state_dict, strict)
 
-    def prior(self):
+    def log_prior(self):
         dist = PriorWeightDistribution()
         return torch.stack([dist.log_prior(w).sum() for w in self.network.parameters()]).sum()

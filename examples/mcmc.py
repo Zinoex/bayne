@@ -52,7 +52,7 @@ def train(model):
             print(f'NLL: {neg_log_prob.item()}')
             last_log = now
 
-        return neg_log_prob - model.prior()
+        return neg_log_prob - model.log_prior()
 
     model.sample(negative_log_prob, num_samples=1000, reject=20)
 
