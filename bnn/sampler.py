@@ -102,10 +102,10 @@ class HamiltonianMonteCarlo(optim.Optimizer):
         p -= TensorList(dVdq()) * (self.step_size / 2)
 
         for _ in range(self.num_steps - 1):
-            q -= p * self.step_size
+            q += p * self.step_size
             p -= TensorList(dVdq()) * self.step_size
 
-        q -= p * self.step_size
+        q += p * self.step_size
         p -= TensorList(dVdq()) * (self.step_size / 2)
 
         return q, -p
