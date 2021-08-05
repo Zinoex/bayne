@@ -59,7 +59,7 @@ def train(model):
 def main():
     model = ExampleVariationalBNN(1, 1)
     train(model)
-    test(model)
+    test(model, 'VI')
 
 
 if __name__ == '__main__':

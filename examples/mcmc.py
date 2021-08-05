@@ -52,7 +52,7 @@ def main():
     subnetwork = ExampleMonteCarloBNN(1, 1)
     model = MonteCarloBNN(subnetwork)
     train(model)
-    test(model)
+    test(model, 'HMC')
 
 
 if __name__ == '__main__':

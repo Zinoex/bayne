@@ -8,7 +8,7 @@ from examples.noisy_sine import NoisySineDataset
 
 
 @torch.no_grad()
-def test(model):
+def test(model, label):
     num_samples = 500
 
     criterion = MSELoss()
@@ -34,6 +34,6 @@ def test(model):
     plt.plot(X_test, y_mean, 'r-', label='Predictive mean')
     plt.scatter(X, y, marker='+', label='Training data')
     plt.fill_between(X_test.ravel(), y_mean + 2 * y_sigma, y_mean - 2 * y_sigma, alpha=0.5, label='Epistemic Uncertainty')
-    plt.title('Prediction')
+    plt.title(f'{label} prediction')
     plt.legend()
     plt.show()

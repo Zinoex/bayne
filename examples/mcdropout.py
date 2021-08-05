@@ -58,7 +58,7 @@ def train(model):
 def main():
     model = ExampleMCDropout(1)
     train(model)
-    test(model)
+    test(model, 'MCD')
 
 
 if __name__ == '__main__':
