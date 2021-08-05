@@ -39,9 +39,9 @@ def train(model):
 
     num_batches = len(dataloader)
 
-    def criterion(input, target):
+    def criterion(output, target):
         dist = distributions.Normal(target, 0.025)
-        return -dist.log_prob(input).mean()
+        return -dist.log_prob(output).mean()
 
     for epoch in trange(num_epochs, desc='Epoch'):
         for idx, (X, y) in enumerate(tqdm(dataloader, desc='Iteration')):
@@ -57,7 +57,6 @@ def train(model):
 
 
 def main():
-    set_random_seed(42)
     model = ExampleVariationalBNN(1, 1)
     train(model)
     test(model)

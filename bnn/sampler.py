@@ -32,9 +32,10 @@ class HamiltonianMonteCarlo(optim.Optimizer):
 
         self.step_size = step_size
         self.num_steps = num_steps
+        self.kinetic_energy_type = 'dot_product'  # Choices: log_prob_sum, dot_product
 
     @torch.no_grad()
-    def step(self, negative_log_prob):
+    def step(self, nll):
         """
         Performs a single forward evolution of Hamiltonian Monte Carlo.
         This should be repeated numerous times to get multiple parameter samples
@@ -52,15 +53,19 @@ class HamiltonianMonteCarlo(optim.Optimizer):
             for param in group['params']:
                 q0.append(param)
 
-        # autograd magic
-        dVdq = grad(negative_log_prob)
+        # Autograd magic
+        @torch.enable_grad()
+        def dVdq():
+            output = nll()
+
+            return torch.autograd.grad(output, q0)
 
         # Sample initial momentum
         momentum_dist = distributions.Normal(0, 1)
         p0 = TensorList([momentum_dist.sample(param.size()) for param in q0])
 
         # Compute initial energy before we start changing parameters
-        start_log_p = negative_log_prob() - torch.stack([momentum_dist.log_prob(param).sum() for param in p0]).sum()
+        start_log_p = nll() - self.kinetic_energy(p0)
 
         # Save initial weights to recover if we failed to accept
         q_start = copy.deepcopy(q0)
@@ -69,26 +74,38 @@ class HamiltonianMonteCarlo(optim.Optimizer):
         q_new, p_new = self.leapfrog(q0, p0, dVdq)
 
         # Check Metropolis acceptance criterion
-        new_log_p = negative_log_prob() - torch.stack([momentum_dist.log_prob(param).sum() for param in p_new]).sum()
+        new_log_p = nll() - self.kinetic_energy(p_new)
 
         acceptance_probability = np.exp(start_log_p - new_log_p)
+        accept = np.random.rand() < acceptance_probability
 
-        if np.random.rand() > acceptance_probability:
+        if not accept:
             # Reject - thus overwrite current (new) weights with previous values
             for q0_tensor, q_start_tensor in zip(q0, q_start):
                 q0_tensor.copy_(q_start_tensor)
+
+        return accept
+
+    def kinetic_energy(self, p):
+        if self.kinetic_energy_type == 'log_prob_sum':
+            momentum_dist = distributions.Normal(0, 1)
+            return torch.stack([momentum_dist.log_prob(param).sum() for param in p]).sum()
+        elif self.kinetic_energy_type == 'dot_product':
+            return torch.stack([(param ** 2).sum() for param in p]).sum()
+        else:
+            raise NotImplementedError()
 
     @torch.no_grad()
     def leapfrog(self, q: TensorList, p: TensorList, dVdq):
         # We don't take a step backwards, but just move the negation from dVdq because
         # negation of a list is rarely a good idea.
-        p -= TensorList(dVdq(q)) * (self.step_size / 2)
+        p -= TensorList(dVdq()) * (self.step_size / 2)
 
         for _ in range(self.num_steps - 1):
             q -= p * self.step_size
-            p -= TensorList(dVdq(q)) * self.step_size
+            p -= TensorList(dVdq()) * self.step_size
 
         q -= p * self.step_size
-        p -= TensorList(dVdq(q)) * (self.step_size / 2)
+        p -= TensorList(dVdq()) * (self.step_size / 2)
 
         return q, -p

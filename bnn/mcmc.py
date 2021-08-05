@@ -1,5 +1,10 @@
+import copy
+
 import torch
 from torch import nn
+from tqdm import trange
+
+from bnn.sampler import HamiltonianMonteCarlo
 
 
 class MonteCarloBNN(nn.Module):
@@ -7,20 +12,38 @@ class MonteCarloBNN(nn.Module):
         super().__init__()
 
         self.network = network
+        self.sampler = HamiltonianMonteCarlo(network.parameters(), step_size=0.0001, num_steps=2)
         self.states = []
 
-    def forward(self, *args, state_idx=0, **kwargs):
-        self.network.load_state_dict(self.states[state_idx])
+    def sample(self, nll, num_samples=1000, reject=0, progress_bar=True):
+        self.states = []
+        num_accept = 0
+
+        r = trange if progress_bar else range
+
+        for idx in r(num_samples + reject):
+            if idx >= 0:
+                self.states.append(copy.deepcopy(self.network.state_dict()))
+
+            accept = self.sampler.step(nll)
+            if accept:
+                num_accept += 1
+
+        print(f'Acceptance ratio: {num_accept / (num_samples + reject)}')
+
+    def forward(self, *args, state_idx=None, **kwargs):
+        if state_idx is not None:
+            self.network.load_state_dict(self.states[state_idx])
 
         return self.network(*args, **kwargs)
 
-    def predict_dist(self, *args, dim=0, **kwargs):
+    def predict_dist(self, *args, num_samples=None, dim=0, **kwargs):
         preds = [self(*args, **kwargs, state_idx=idx) for idx in range(len(self.states))]
         preds = torch.stack(preds, dim=dim)
         return preds
 
-    def predict_mean(self, *args, num_samples=1, dim=0, **kwargs):
-        preds = self.predict_dist(*args, num_samples=num_samples, dim=dim, **kwargs)
+    def predict_mean(self, *args, num_samples=None, dim=0, **kwargs):
+        preds = self.predict_dist(*args, dim=dim, **kwargs)
         return preds.mean(dim=dim)
 
     def state_dict(self, destination=None, prefix='', keep_vars=False):
@@ -30,6 +53,7 @@ class MonteCarloBNN(nn.Module):
         return state_dict
 
     def load_state_dict(self, state_dict, strict=True):
-        states = state_dict.pop('states')
+        self.states = state_dict.pop('states')
+        self.network.load_state_dict(self.states[0])
 
-        super(MonteCarloBNN, self).load_state_dict(state_dict, strict)
+        super().load_state_dict(state_dict, strict)
