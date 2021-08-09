@@ -4,7 +4,7 @@ from matplotlib import pyplot as plt
 from torch.nn import MSELoss
 from torch.utils.data import DataLoader
 
-from bnn.util import timer
+from bayne.util import timer
 from examples.noisy_sine import NoisySineDataset
 
 

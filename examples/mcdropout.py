@@ -3,7 +3,7 @@ from torch.nn import MSELoss
 from torch.utils.data import DataLoader
 from tqdm import trange, tqdm
 
-from bnn.mcdropout import BaseMCDropout
+from bayne.mcdropout import BaseMCDropout
 from examples.noisy_sine import NoisySineDataset
 from examples.test import test
 

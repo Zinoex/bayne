@@ -5,8 +5,8 @@ from torch.nn import Linear
 from torch.utils.data import DataLoader
 from tqdm import trange, tqdm
 
-from bnn.mcmc import MonteCarloBNN
-from bnn.util import set_random_seed
+from bayne.mcmc import MonteCarloBNN
+from bayne.util import set_random_seed
 from examples.noisy_sine import NoisySineDataset
 from examples.test import test
 

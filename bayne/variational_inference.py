@@ -4,7 +4,7 @@ from torch import nn, distributions
 from torch.nn import init
 import torch.nn.functional as F
 
-from bnn.distributions import PriorWeightDistribution, PosteriorWeightDistribution
+from bayne.distributions import PriorWeightDistribution, PosteriorWeightDistribution
 
 
 class VariationalBayesianLayer(nn.Module):

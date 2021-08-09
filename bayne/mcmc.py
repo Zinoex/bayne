@@ -4,8 +4,8 @@ import torch
 from torch import nn, distributions
 from tqdm import trange
 
-from bnn.distributions import PriorWeightDistribution
-from bnn.sampler import HamiltonianMonteCarlo
+from bayne.distributions import PriorWeightDistribution
+from bayne.sampler import HamiltonianMonteCarlo
 
 
 class MonteCarloBNN(nn.Module):
@@ -59,6 +59,5 @@ class MonteCarloBNN(nn.Module):
 
         super().load_state_dict(state_dict, strict)
 
-    def log_prior(self):
-        dist = PriorWeightDistribution()
+    def log_prior(self, dist=PriorWeightDistribution()):
         return torch.stack([dist.log_prior(w).sum() for w in self.network.parameters()]).sum()
