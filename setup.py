@@ -20,7 +20,11 @@ setuptools.setup(
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
         "Operating System :: OS Independent",
     ],
-    package_dir={"": "bayne"},
-    packages=setuptools.find_packages(where="bayne"),
+    packages=setuptools.find_packages(include=["bayne", "bayne.*"]),
     python_requires=">=3.6",
+    install_requires=[
+        'torch',
+        'numpy',
+        'tqdm'
+    ]
 )
