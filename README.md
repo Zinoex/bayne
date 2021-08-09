@@ -1,4 +1,5 @@
 # Bayne - Bayesian Neural Networks
+Pytorch-based Bayesian Neural Networks library
 
 Features:
 - Monte Carlo Dropout (MCD)
