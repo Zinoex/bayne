@@ -105,10 +105,13 @@ class MonteCarloBNN(nn.Module):
         super().__init__()
 
         self.network = network
-        self.sampler = HamiltonianMonteCarlo(network.parameters(), step_size=step_size, num_steps=num_steps)
         self.states = []
+        self.step_size = step_size
+        self.num_steps = num_steps
 
     def sample(self, negative_log_prob, num_samples=1000, reject=0, progress_bar=True):
+        # The need to recreate the sample is to allow loading other params between two samplings
+        sampler = HamiltonianMonteCarlo(self.network.parameters(), step_size=self.step_size, num_steps=self.num_steps)
         self.states = []
         num_accept = 0
 
@@ -118,7 +121,7 @@ class MonteCarloBNN(nn.Module):
             if idx >= reject:
                 self.states.append(copy.deepcopy(self.network.state_dict()))
 
-            accept = self.sampler.step(negative_log_prob)
+            accept = sampler.step(negative_log_prob)
             if accept:
                 num_accept += 1
 
