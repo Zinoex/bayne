@@ -1,8 +1,6 @@
-import numpy as np
 import torch
-from torch import nn, distributions
-from torch.nn import init
 import torch.nn.functional as F
+from torch import nn
 
 from bayne.distributions import PriorWeightDistribution, PosteriorWeightDistribution
 
