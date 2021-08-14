@@ -152,8 +152,7 @@ class MonteCarloBNN(nn.Module):
         self.states = state_dict.pop('states')
         self.network.load_state_dict(self.states[0])
 
-        for m in self.modules():
-            m._load_from_state_dict = _non_copy_load_from_state_dict
+        self.apply(non_copy_load_state_dict_wrapper)
 
         super().load_state_dict(state_dict, strict)
 
