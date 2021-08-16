@@ -101,31 +101,15 @@ def non_copy_load_state_dict_wrapper(cls):
 
 
 class MonteCarloBNN(nn.Module):
-    def __init__(self, network, step_size=0.0005, num_steps=100):
+    def __init__(self, network, sampler=HamiltonianMonteCarlo(step_size=0.0005, num_steps=100)):
         super().__init__()
 
         self.network = network
         self.states = []
-        self.step_size = step_size
-        self.num_steps = num_steps
+        self.sampler = sampler
 
     def sample(self, negative_log_prob, num_samples=1000, reject=0, progress_bar=True):
-        # The need to recreate the sample is to allow loading other params between two samplings
-        sampler = HamiltonianMonteCarlo(self.network.parameters(), step_size=self.step_size, num_steps=self.num_steps)
-        self.states = []
-        num_accept = 0
-
-        r = trange if progress_bar else range
-
-        for idx in r(num_samples + reject):
-            if idx >= reject:
-                self.states.append(copy.deepcopy(self.network.state_dict()))
-
-            accept = sampler.step(negative_log_prob)
-            if accept:
-                num_accept += 1
-
-        print(f'Acceptance ratio: {num_accept / (num_samples + reject)}')
+        self.states = self.sampler.sample(self.network, negative_log_prob, num_samples, reject, progress_bar)
 
     def forward(self, *args, state_idx=None, **kwargs):
         if state_idx is not None:

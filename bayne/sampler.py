@@ -3,6 +3,7 @@ import copy
 import numpy as np
 import torch
 from torch import optim, distributions
+from tqdm import trange
 
 
 class TensorList(list):
@@ -25,16 +26,32 @@ class TensorList(list):
         return TensorList([x * other for x in self])
 
 
-class HamiltonianMonteCarlo(optim.Optimizer):
-    def __init__(self, params, step_size, num_steps):
-        super().__init__(params, {})
-
+class HamiltonianMonteCarlo:
+    def __init__(self, step_size, num_steps):
         self.step_size = step_size
         self.num_steps = num_steps
         self.kinetic_energy_type = 'log_prob_sum'  # Choices: log_prob_sum, dot_product
 
+    def sample(self, network, negative_log_prob, num_samples=1000, reject=0, progress_bar=True):
+        states = []
+        num_accept = 0
+
+        r = trange if progress_bar else range
+        params = network.parameters()
+
+        for idx in r(num_samples + reject):
+            if idx >= reject:
+                states.append(copy.deepcopy(network.state_dict()))
+
+            accept = self.step(params, negative_log_prob)
+            if accept:
+                num_accept += 1
+
+        print(f'Acceptance ratio: {num_accept / (num_samples + reject)}')
+        return states
+
     @torch.no_grad()
-    def step(self, negative_log_prob):
+    def step(self, params, negative_log_prob):
         """
         Performs a single forward evolution of Hamiltonian Monte Carlo.
         This should be repeated numerous times to get multiple parameter samples
@@ -47,10 +64,7 @@ class HamiltonianMonteCarlo(optim.Optimizer):
 
         # Collect q0 - note that this is just a reference copy;
         # not a deep copy (important to leapfrog and acceptance step).
-        q0 = TensorList()
-        for group in self.param_groups:
-            for param in group['params']:
-                q0.append(param)
+        q0 = TensorList(params)
 
         # Autograd magic
         @torch.enable_grad()
