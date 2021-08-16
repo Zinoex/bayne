@@ -10,7 +10,7 @@ from bayne.util import TensorList
 
 
 class HamiltonianMonteCarlo:
-    def __init__(self, step_size=0.0005, num_steps=100):
+    def __init__(self, step_size=1e-4, num_steps=50):
         self.step_size = step_size
         self.num_steps = num_steps
         self.kinetic_energy_type = 'log_prob_sum'  # Choices: log_prob_sum, dot_product
@@ -111,7 +111,7 @@ class HamiltonianMonteCarlo:
 
 
 class StochasticGradientHMC:
-    def __init__(self, step_size=0.0005, num_steps=100, momentum_decay=0.05):
+    def __init__(self, step_size=1e-4, num_steps=50, momentum_decay=0.05):
         self.step_size = step_size
         self.num_steps = num_steps
         self.momentum_decay = momentum_decay

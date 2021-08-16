@@ -99,7 +99,7 @@ def non_copy_load_state_dict_wrapper(cls):
 
 
 class MonteCarloBNN(nn.Module):
-    def __init__(self, network, sampler=HamiltonianMonteCarlo(step_size=0.0005, num_steps=100)):
+    def __init__(self, network, sampler=HamiltonianMonteCarlo(step_size=1e-4, num_steps=50)):
         super().__init__()
 
         self.network = network
