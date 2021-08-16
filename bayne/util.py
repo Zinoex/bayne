@@ -6,6 +6,53 @@ import numpy as np
 import torch
 
 
+class TensorList(list):
+    def __neg__(self):
+        return TensorList([-x for x in self])
+
+    def __iadd__(self, other):
+        if isinstance(other, TensorList):
+            for x, x_prime in zip(self, other):
+                x.add_(x_prime)
+        else:
+            for x in self:
+                x.add_(other)
+
+        return self
+
+    def __isub__(self, other):
+        if isinstance(other, TensorList):
+            for x, x_prime in zip(self, other):
+                x.sub_(x_prime)
+        else:
+            for x in self:
+                x.sub_(other)
+
+        return self
+
+    def __itruediv__(self, other):
+        if isinstance(other, TensorList):
+            for x, x_prime in zip(self, other):
+                x.div_(x_prime)
+        else:
+            for x in self:
+                x.div_(other)
+
+    def __imul__(self, other):
+        if isinstance(other, TensorList):
+            for x, x_prime in zip(self, other):
+                x.mul_(x_prime)
+        else:
+            for x in self:
+                x.mul_(other)
+
+    def __truediv__(self, other):
+        return TensorList([x / other for x in self])
+
+    def __mul__(self, other):
+        return TensorList([x * other for x in self])
+
+
 def timer(func):
     """Print the runtime of the decorated function"""
 

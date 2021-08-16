@@ -5,29 +5,12 @@ import torch
 from torch import optim, distributions
 from tqdm import trange
 
-
-class TensorList(list):
-    def __neg__(self):
-        return TensorList([-x for x in self])
-
-    def __iadd__(self, other):
-        for x, x_prime in zip(self, other):
-            x.add_(x_prime)
-
-        return self
-
-    def __isub__(self, other):
-        for x, x_prime in zip(self, other):
-            x.sub_(x_prime)
-
-        return self
-
-    def __mul__(self, other):
-        return TensorList([x * other for x in self])
+from bayne.nll import NegativeLogProb
+from bayne.util import TensorList
 
 
 class HamiltonianMonteCarlo:
-    def __init__(self, step_size, num_steps):
+    def __init__(self, step_size=0.0005, num_steps=100):
         self.step_size = step_size
         self.num_steps = num_steps
         self.kinetic_energy_type = 'log_prob_sum'  # Choices: log_prob_sum, dot_product
@@ -37,7 +20,7 @@ class HamiltonianMonteCarlo:
         num_accept = 0
 
         r = trange if progress_bar else range
-        params = network.parameters()
+        params = list(network.parameters())
 
         for idx in r(num_samples + reject):
             if idx >= reject:
@@ -67,11 +50,14 @@ class HamiltonianMonteCarlo:
         q0 = TensorList(params)
 
         # Autograd magic
-        @torch.enable_grad()
-        def dVdq():
-            output = negative_log_prob()
+        if isinstance(negative_log_prob, NegativeLogProb):
+            dVdq = negative_log_prob.dVdq
+        else:
+            @torch.enable_grad()
+            def dVdq():
+                output = negative_log_prob()
 
-            return torch.autograd.grad(output, q0)
+                return torch.autograd.grad(output, q0)
 
         # Sample initial momentum
         momentum_dist = distributions.Normal(0, 1)
@@ -122,3 +108,68 @@ class HamiltonianMonteCarlo:
         p -= TensorList(dVdq()) * (self.step_size / 2)
 
         return q, -p
+
+
+class StochasticGradientHMC:
+    def __init__(self, step_size=0.0005, num_steps=100, momentum_decay=0.05):
+        self.step_size = step_size
+        self.num_steps = num_steps
+        self.momentum_decay = momentum_decay
+        self.kinetic_energy_type = 'log_prob_sum'  # Choices: log_prob_sum, dot_product
+
+    def sample(self, network, negative_log_prob, num_samples=1000, reject=0, progress_bar=True):
+        states = []
+
+        r = trange if progress_bar else range
+        params = list(network.parameters())
+
+        for idx in r(num_samples + reject):
+            if idx >= reject:
+                states.append(copy.deepcopy(network.state_dict()))
+
+            self.step(params, negative_log_prob)
+
+        return states
+
+    @torch.no_grad()
+    def step(self, params, negative_log_prob):
+        """
+        Performs a single forward evolution of SG Hamiltonian Monte Carlo.
+        This should be repeated numerous times to get multiple parameter samples
+        from multiple energy levels.
+
+        negative_log_prob should be defined through the function of study as we traverse
+        the parameters space directly on this network (using pass by reference).
+        Therefore, we assume it is a parameterless function.
+        """
+
+        # Collect q - note that this is just a reference copy;
+        # not a deep copy (important to leapfrog and acceptance step).
+        q = TensorList(params)
+
+        # Autograd magic
+        if isinstance(negative_log_prob, NegativeLogProb):
+            dVdq = negative_log_prob.dVdq
+        else:
+            @torch.enable_grad()
+            def dVdq():
+                output = negative_log_prob()
+
+                return torch.autograd.grad(output, q)
+
+        # Sample initial momentum
+        momentum_dist = distributions.Normal(0, 1)
+        p = TensorList([momentum_dist.sample(param.size()) for param in q])
+
+        # Integrate over our path to get a new position and momentum
+        self.propose(q, p, dVdq)
+
+    @torch.no_grad()
+    def propose(self, q: TensorList, p: TensorList, dVdq):
+        for _ in range(self.num_steps):
+            q += p * self.step_size
+
+            p -= self.step_size * self.momentum_decay
+            p -= TensorList(dVdq()) * self.step_size
+            sigma = torch.clamp(torch.tensor(2 * self.momentum_decay * self.step_size), min=1e-16)
+            p += torch.normal(mean=0., std=sigma)

@@ -1,10 +1,8 @@
-import copy
 import itertools
 
 import torch
 from torch import nn
 from torch.nn import Parameter
-from tqdm import trange
 
 from bayne.distributions import PriorWeightDistribution
 from bayne.sampler import HamiltonianMonteCarlo
