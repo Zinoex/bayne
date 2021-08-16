@@ -111,6 +111,7 @@ class MonteCarloBNN(nn.Module):
 
     def forward(self, *args, state_idx=None, **kwargs):
         if state_idx is not None:
+            self.apply(non_copy_load_state_dict_wrapper)
             self.network.load_state_dict(self.states[state_idx])
 
         return self.network(*args, **kwargs)
