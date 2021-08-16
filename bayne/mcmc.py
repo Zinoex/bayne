@@ -1,4 +1,5 @@
 import itertools
+import types
 
 import torch
 from torch import nn
