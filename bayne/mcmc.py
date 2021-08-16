@@ -93,9 +93,9 @@ def _non_copy_load_from_state_dict(self, state_dict, prefix, local_metadata, str
                     unexpected_keys.append(key)
 
 
-def non_copy_load_state_dict_wrapper(cls):
-    cls._load_from_state_dict = _non_copy_load_from_state_dict
-    return cls
+def set_non_copy_load_state_dict(self):
+    self._load_from_state_dict = types.MethodType(_non_copy_load_from_state_dict, self)
+    return self
 
 
 class MonteCarloBNN(nn.Module):
@@ -111,8 +111,7 @@ class MonteCarloBNN(nn.Module):
 
     def forward(self, *args, state_idx=None, **kwargs):
         if state_idx is not None:
-            self.apply(non_copy_load_state_dict_wrapper)
-            self.network.load_state_dict(self.states[state_idx])
+            self.load_network(state_idx)
 
         return self.network(*args, **kwargs)
 
@@ -133,11 +132,13 @@ class MonteCarloBNN(nn.Module):
 
     def load_state_dict(self, state_dict, strict=True):
         self.states = state_dict.pop('states')
-        self.network.load_state_dict(self.states[0])
-
-        self.apply(non_copy_load_state_dict_wrapper)
+        self.load_network(0)
 
         super().load_state_dict(state_dict, strict)
 
     def log_prior(self, dist=PriorWeightDistribution()):
         return torch.stack([dist.log_prior(w).sum() for w in self.network.parameters()]).sum()
+
+    def load_network(self, idx):
+        self.apply(set_non_copy_load_state_dict)
+        self.network.load_state_dict(self.states[idx])
