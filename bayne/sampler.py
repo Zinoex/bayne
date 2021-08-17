@@ -1,4 +1,5 @@
 import copy
+import math
 
 import numpy as np
 import torch
@@ -15,16 +16,16 @@ class HamiltonianMonteCarlo:
         self.num_steps = num_steps
         self.kinetic_energy_type = 'log_prob_sum'  # Choices: log_prob_sum, dot_product
 
-    def sample(self, network, negative_log_prob, num_samples=1000, reject=0, progress_bar=True):
+    def sample(self, mcmc, negative_log_prob, num_samples=1000, reject=0, progress_bar=True):
         states = []
         num_accept = 0
 
         r = trange if progress_bar else range
-        params = list(network.parameters())
+        params = list(mcmc.parameters())
 
         for idx in r(num_samples + reject):
             if idx >= reject:
-                states.append(copy.deepcopy(network.state_dict()))
+                states.append(copy.deepcopy(mcmc.subnetwork_state_dict()))
 
             accept = self.step(params, negative_log_prob)
             if accept:
@@ -111,21 +112,24 @@ class HamiltonianMonteCarlo:
 
 
 class StochasticGradientHMC:
-    def __init__(self, step_size=1e-4, num_steps=50, momentum_decay=0.05):
+    def __init__(self, step_size=1e-4, num_steps=50, momentum_decay=0.05, grad_noise=0.01):
         self.step_size = step_size
         self.num_steps = num_steps
         self.momentum_decay = momentum_decay
+        self.grad_noise = grad_noise
+        assert momentum_decay >= grad_noise
+
         self.kinetic_energy_type = 'log_prob_sum'  # Choices: log_prob_sum, dot_product
 
-    def sample(self, network, negative_log_prob, num_samples=1000, reject=0, progress_bar=True):
+    def sample(self, mcmc, negative_log_prob, num_samples=1000, reject=0, progress_bar=True):
         states = []
 
         r = trange if progress_bar else range
-        params = list(network.parameters())
+        params = list(mcmc.parameters())
 
         for idx in r(num_samples + reject):
             if idx >= reject:
-                states.append(copy.deepcopy(network.state_dict()))
+                states.append(copy.deepcopy(mcmc.subnetwork_state_dict()))
 
             self.step(params, negative_log_prob)
 
@@ -171,5 +175,111 @@ class StochasticGradientHMC:
 
             p -= self.step_size * self.momentum_decay
             p -= TensorList(dVdq()) * self.step_size
-            sigma = torch.clamp(torch.tensor(2 * self.momentum_decay * self.step_size), min=1e-16)
+            sigma = torch.sqrt(torch.tensor(2 * (self.momentum_decay - self.grad_noise) * self.step_size))
+            p += torch.normal(mean=0., std=sigma)
+
+
+class CyclicalStochasticGradientHMC:
+    def __init__(self, num_cycles=4, percentage_exploration=0.9, initial_step_size=1e-6, num_steps=50, momentum_decay=0.05, grad_noise=0.01):
+        self.num_cycles = num_cycles
+        self.percentage_exploration = percentage_exploration
+        self.initial_step_size = initial_step_size
+        self.num_steps = num_steps
+        self.momentum_decay = momentum_decay
+        self.grad_noise = grad_noise
+        assert momentum_decay >= grad_noise
+
+        self.kinetic_energy_type = 'log_prob_sum'  # Choices: log_prob_sum, dot_product
+
+    def sample(self, mcmc, negative_log_prob, num_samples=1000, reject=None, progress_bar=True):
+        assert num_samples % self.num_cycles == 0,\
+            f'Number of samples ({num_samples}) should be a multiple of the number of cycles ({self.num_cycles})'
+        samples_per_cycle = num_samples // self.num_cycles
+        iterations_per_cycle = int(samples_per_cycle // (1 - self.percentage_exploration))
+        exploration_steps_per_cycle = iterations_per_cycle - samples_per_cycle
+
+        states = []
+
+        r = trange(self.num_cycles, desc='Cycle') if progress_bar else range(self.num_cycles)
+        params = list(mcmc.parameters())
+
+        for cycle in r:
+            mcmc.reset()
+            for it in trange(iterations_per_cycle, desc='iteration'):
+                if it == 0:
+                    print('Starting exploration')
+                elif it == exploration_steps_per_cycle:
+                    print('Starting sampling')
+
+                exploration = it < exploration_steps_per_cycle
+                iteration_percentage = it / float(iterations_per_cycle)
+                step_size = self.initial_step_size / 2 * (math.cos(math.pi * iteration_percentage) + 1)
+
+                if exploration:
+                    self.step_exploration(params, negative_log_prob, step_size)
+                else:
+                    self.step_sampling(params, negative_log_prob, step_size)
+                    states.append(copy.deepcopy(mcmc.subnetwork_state_dict()))
+
+        return states
+
+    @torch.no_grad()
+    def step_exploration(self, params, negative_log_prob, step_size):
+        # Collect q - note that this is just a reference copy;
+        # not a deep copy (important to leapfrog and acceptance step).
+        q = TensorList(params)
+
+        # Autograd magic
+        if isinstance(negative_log_prob, NegativeLogProb):
+            dVdq = negative_log_prob.dVdq
+        else:
+            @torch.enable_grad()
+            def dVdq():
+                output = negative_log_prob()
+
+                return torch.autograd.grad(output, q)
+
+        q -= TensorList(dVdq()) * step_size
+
+    @torch.no_grad()
+    def step_sampling(self, params, negative_log_prob, step_size):
+        """
+        Performs a single forward evolution of SG Hamiltonian Monte Carlo.
+        This should be repeated numerous times to get multiple parameter samples
+        from multiple energy levels.
+
+        negative_log_prob should be defined through the function of study as we traverse
+        the parameters space directly on this network (using pass by reference).
+        Therefore, we assume it is a parameterless function.
+        """
+
+        # Collect q - note that this is just a reference copy;
+        # not a deep copy (important to leapfrog and acceptance step).
+        q = TensorList(params)
+
+        # Autograd magic
+        if isinstance(negative_log_prob, NegativeLogProb):
+            dVdq = negative_log_prob.dVdq
+        else:
+            @torch.enable_grad()
+            def dVdq():
+                output = negative_log_prob()
+
+                return torch.autograd.grad(output, q)
+
+        # Sample initial momentum
+        momentum_dist = distributions.Normal(0, 1)
+        p = TensorList([momentum_dist.sample(param.size()) for param in q])
+
+        # Integrate over our path to get a new position and momentum
+        self.propose(q, p, dVdq, step_size)
+
+    @torch.no_grad()
+    def propose(self, q: TensorList, p: TensorList, dVdq, step_size):
+        for _ in range(self.num_steps):
+            q += p * step_size
+
+            p -= step_size * self.momentum_decay
+            p -= TensorList(dVdq()) * step_size
+            sigma = torch.sqrt(torch.tensor(2 * (self.momentum_decay - self.grad_noise) * step_size))
             p += torch.normal(mean=0., std=sigma)

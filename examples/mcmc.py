@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 
 from bayne.mcmc import MonteCarloBNN
 from bayne.nll import GaussianNegativeLogProb
+from bayne.sampler import HamiltonianMonteCarlo
 from examples.noisy_sine import NoisySineDataset
 from examples.test import test
 
@@ -41,7 +42,7 @@ def train(model):
 
 def main():
     subnetwork = ExampleMonteCarloBNN(1, 1)
-    model = MonteCarloBNN(subnetwork)
+    model = MonteCarloBNN(subnetwork, sampler=HamiltonianMonteCarlo(step_size=5e-4))
     train(model)
     test(model, 'HMC')
 

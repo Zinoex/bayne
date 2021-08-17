@@ -53,6 +53,14 @@ class TensorList(list):
         return TensorList([x * other for x in self])
 
 
+class ResetableModule:
+    def reset(self):
+        def _reset(m):
+            if hasattr(m, 'reset_parameters'):
+                m.reset_parameters()
+        self.apply(_reset)
+
+
 def timer(func):
     """Print the runtime of the decorated function"""
 

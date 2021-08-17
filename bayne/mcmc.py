@@ -7,6 +7,7 @@ from torch.nn import Parameter
 
 from bayne.distributions import PriorWeightDistribution
 from bayne.sampler import HamiltonianMonteCarlo
+from bayne.util import ResetableModule
 
 
 def _non_copy_load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
@@ -99,7 +100,7 @@ def set_non_copy_load_state_dict(self):
     return self
 
 
-class MonteCarloBNN(nn.Module):
+class MonteCarloBNN(nn.Module, ResetableModule):
     def __init__(self, network, sampler=HamiltonianMonteCarlo(step_size=1e-4, num_steps=50)):
         super().__init__()
 
@@ -108,7 +109,7 @@ class MonteCarloBNN(nn.Module):
         self.sampler = sampler
 
     def sample(self, negative_log_prob, num_samples=1000, reject=0, progress_bar=True):
-        self.states = self.sampler.sample(self.network, negative_log_prob, num_samples, reject, progress_bar)
+        self.states = self.sampler.sample(self, negative_log_prob, num_samples, reject, progress_bar)
 
     def forward(self, *args, state_idx=None, **kwargs):
         if state_idx is not None:
@@ -143,3 +144,6 @@ class MonteCarloBNN(nn.Module):
     def load_network(self, idx):
         self.apply(set_non_copy_load_state_dict)
         self.network.load_state_dict(self.states[idx])
+
+    def subnetwork_state_dict(self):
+        return self.network.state_dict()
