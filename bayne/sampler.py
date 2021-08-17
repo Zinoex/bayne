@@ -180,7 +180,7 @@ class StochasticGradientHMC:
 
 
 class CyclicalStochasticGradientHMC:
-    def __init__(self, num_cycles=4, percentage_exploration=0.9, initial_step_size=1e-6, num_steps=50, momentum_decay=0.05, grad_noise=0.01):
+    def __init__(self, num_cycles=4, percentage_exploration=0.9, initial_step_size=1e-6, num_steps=50, momentum_decay=0.05, grad_noise=0.01, reset_after_cycle=False):
         self.num_cycles = num_cycles
         self.percentage_exploration = percentage_exploration
         self.initial_step_size = initial_step_size
@@ -188,6 +188,7 @@ class CyclicalStochasticGradientHMC:
         self.momentum_decay = momentum_decay
         self.grad_noise = grad_noise
         assert momentum_decay >= grad_noise
+        self.reset_after_cycle = reset_after_cycle
 
         self.kinetic_energy_type = 'log_prob_sum'  # Choices: log_prob_sum, dot_product
 
@@ -204,7 +205,8 @@ class CyclicalStochasticGradientHMC:
         params = list(mcmc.parameters())
 
         for cycle in r:
-            mcmc.reset()
+            if self.reset_after_cycle:
+                mcmc.reset()
             for it in trange(iterations_per_cycle, desc='iteration'):
                 if it == 0:
                     print('Starting exploration')
