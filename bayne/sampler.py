@@ -200,12 +200,11 @@ class CyclicalStochasticGradientHMC:
         exploration_steps_per_cycle = iterations_per_cycle - samples_per_cycle
 
         states = []
-
-        r = trange(self.num_cycles, desc='Cycle') if progress_bar else range(self.num_cycles)
         params = list(mcmc.parameters())
 
         self.burn_in(params, negative_log_prob, reject, inner_progress_bar)
 
+        r = trange(self.num_cycles, desc='Cycle') if progress_bar else range(self.num_cycles)
         for cycle in r:
             if self.reset_after_cycle:
                 mcmc.reset()
