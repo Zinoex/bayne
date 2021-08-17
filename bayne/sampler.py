@@ -194,9 +194,8 @@ class CyclicalStochasticGradientHMC:
     def sample(self, mcmc, negative_log_prob, num_samples=1000, reject=1000, progress_bar=True):
         assert num_samples % self.num_cycles == 0,\
             f'Number of samples ({num_samples}) should be a multiple of the number of cycles ({self.num_cycles})'
-        iterations_per_cycle = num_samples + reject
-        samples_per_cycle = (num_samples + reject) // self.num_cycles
-        exploration_steps_per_cycle = iterations_per_cycle - samples_per_cycle
+        iterations_per_cycle = (num_samples + reject) // self.num_cycles
+        exploration_steps_per_cycle = reject // self.num_cycles
 
         states = []
 
