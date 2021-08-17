@@ -180,9 +180,8 @@ class StochasticGradientHMC:
 
 
 class CyclicalStochasticGradientHMC:
-    def __init__(self, num_cycles=4, percentage_exploration=0.9, initial_step_size=1e-6, num_steps=50, momentum_decay=0.05, grad_noise=0.01, reset_after_cycle=False):
+    def __init__(self, num_cycles=4, initial_step_size=1e-6, num_steps=50, momentum_decay=0.05, grad_noise=0.01, reset_after_cycle=False):
         self.num_cycles = num_cycles
-        self.percentage_exploration = percentage_exploration
         self.initial_step_size = initial_step_size
         self.num_steps = num_steps
         self.momentum_decay = momentum_decay
@@ -193,16 +192,13 @@ class CyclicalStochasticGradientHMC:
         self.kinetic_energy_type = 'log_prob_sum'  # Choices: log_prob_sum, dot_product
 
     def sample(self, mcmc, negative_log_prob, num_samples=20, reject=200, progress_bar=True, inner_progress_bar=False):
-        assert num_samples % self.num_cycles == 0,\
-            f'Number of samples ({num_samples}) should be a multiple of the number of cycles ({self.num_cycles})'
-        samples_per_cycle = num_samples // self.num_cycles
-        iterations_per_cycle = int(samples_per_cycle // (1 - self.percentage_exploration))
-        exploration_steps_per_cycle = iterations_per_cycle - samples_per_cycle
+        assert num_samples % self.num_cycles == 0 and reject % self.num_cycles == 0,\
+            f'Number of samples ({num_samples}) and rejects ({reject}) should be a multiple of the number of cycles ({self.num_cycles})'
+        iterations_per_cycle = int((num_samples + reject) // self.num_cycles)
+        exploration_steps_per_cycle = int(reject // self.num_cycles)
 
         states = []
         params = list(mcmc.parameters())
-
-        self.burn_in(params, negative_log_prob, reject, inner_progress_bar)
 
         r = trange(self.num_cycles, desc='Cycle') if progress_bar else range(self.num_cycles)
         for cycle in r:
@@ -229,30 +225,24 @@ class CyclicalStochasticGradientHMC:
 
         return states
 
-    def burn_in(self, params, negative_log_prob, reject, progress_bar):
-        r = trange(reject, desc='Burn-in') if progress_bar else range(reject)
-
-        for it in r:
-            step_size = self.initial_step_size / 2
-            self.step_exploration(params, negative_log_prob, step_size)
-
     @torch.no_grad()
     def step_exploration(self, params, negative_log_prob, step_size):
-        # Collect q - note that this is just a reference copy;
-        # not a deep copy (important to leapfrog and acceptance step).
-        q = TensorList(params)
+        for _ in range(self.num_steps):
+            # Collect q - note that this is just a reference copy;
+            # not a deep copy (important to leapfrog and acceptance step).
+            q = TensorList(params)
 
-        # Autograd magic
-        if isinstance(negative_log_prob, NegativeLogProb):
-            dVdq = negative_log_prob.dVdq
-        else:
-            @torch.enable_grad()
-            def dVdq():
-                output = negative_log_prob()
+            # Autograd magic
+            if isinstance(negative_log_prob, NegativeLogProb):
+                dVdq = negative_log_prob.dVdq
+            else:
+                @torch.enable_grad()
+                def dVdq():
+                    output = negative_log_prob()
 
-                return torch.autograd.grad(output, q)
+                    return torch.autograd.grad(output, q)
 
-        q -= TensorList(dVdq()) * step_size
+            q -= TensorList(dVdq()) * step_size
 
     @torch.no_grad()
     def step_sampling(self, params, negative_log_prob, step_size):
