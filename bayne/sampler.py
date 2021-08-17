@@ -180,8 +180,9 @@ class StochasticGradientHMC:
 
 
 class CyclicalStochasticGradientHMC:
-    def __init__(self, num_cycles=4, initial_step_size=1e-6, num_steps=50, momentum_decay=0.05, grad_noise=0.01, reset_after_cycle=False):
+    def __init__(self, num_cycles=4, burn_in_cycles=2, initial_step_size=1e-6, num_steps=50, momentum_decay=0.05, grad_noise=0.01, reset_after_cycle=False):
         self.num_cycles = num_cycles
+        self.burn_in_cycles = burn_in_cycles
         self.initial_step_size = initial_step_size
         self.num_steps = num_steps
         self.momentum_decay = momentum_decay
@@ -199,7 +200,8 @@ class CyclicalStochasticGradientHMC:
 
         states = []
 
-        r = trange(self.num_cycles, desc='Cycle') if progress_bar else range(self.num_cycles)
+        total_cycles = self.num_cycles + self.burn_in_cycles
+        r = trange(total_cycles, desc='Cycle') if progress_bar else range(total_cycles)
         params = list(mcmc.parameters())
 
         for cycle in r:
@@ -219,7 +221,9 @@ class CyclicalStochasticGradientHMC:
                     self.step_exploration(params, negative_log_prob, step_size)
                 else:
                     self.step_sampling(params, negative_log_prob, step_size)
-                    states.append(copy.deepcopy(mcmc.subnetwork_state_dict()))
+
+                    if cycle >= self.burn_in_cycles:
+                        states.append(copy.deepcopy(mcmc.subnetwork_state_dict()))
 
         return states
 
