@@ -180,9 +180,8 @@ class StochasticGradientHMC:
 
 
 class CyclicalStochasticGradientHMC:
-    def __init__(self, num_cycles=4, percentage_exploration=0.9, initial_step_size=1e-6, num_steps=50, momentum_decay=0.05, grad_noise=0.01, reset_after_cycle=False):
+    def __init__(self, num_cycles=4, initial_step_size=1e-6, num_steps=50, momentum_decay=0.05, grad_noise=0.01, reset_after_cycle=False):
         self.num_cycles = num_cycles
-        self.percentage_exploration = percentage_exploration
         self.initial_step_size = initial_step_size
         self.num_steps = num_steps
         self.momentum_decay = momentum_decay
@@ -192,11 +191,11 @@ class CyclicalStochasticGradientHMC:
 
         self.kinetic_energy_type = 'log_prob_sum'  # Choices: log_prob_sum, dot_product
 
-    def sample(self, mcmc, negative_log_prob, num_samples=1000, reject=None, progress_bar=True):
+    def sample(self, mcmc, negative_log_prob, num_samples=1000, reject=1000, progress_bar=True):
         assert num_samples % self.num_cycles == 0,\
             f'Number of samples ({num_samples}) should be a multiple of the number of cycles ({self.num_cycles})'
-        samples_per_cycle = num_samples // self.num_cycles
-        iterations_per_cycle = int(samples_per_cycle // (1 - self.percentage_exploration))
+        iterations_per_cycle = num_samples + reject
+        samples_per_cycle = (num_samples + reject) // self.num_cycles
         exploration_steps_per_cycle = iterations_per_cycle - samples_per_cycle
 
         states = []
