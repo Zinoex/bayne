@@ -164,14 +164,10 @@ class StochasticGradientHMC:
         # Sample initial momentum
         momentum_dist = distributions.Normal(0, 1)
         p = TensorList([momentum_dist.sample(param.size()) for param in q])
+        p *= self.step_size
 
-        # Integrate over our path to get a new position and momentum
-        self.propose(q, p, dVdq)
-
-    @torch.no_grad()
-    def propose(self, q: TensorList, p: TensorList, dVdq):
-        for _ in range(self.num_steps):
-            q += p * self.step_size
+        for step in range(self.num_steps):
+            q += p
 
             p -= self.step_size * self.momentum_decay
             p -= TensorList(dVdq()) * self.step_size
@@ -263,14 +259,12 @@ class CyclicalStochasticGradientHMC:
         momentum_dist = distributions.Normal(0, 1)
         p = TensorList([momentum_dist.sample(param.size()) for param in q])
 
-        # Integrate over our path to get a new position and momentum
-        self.propose(q, p, dVdq, it, steps_per_cycle)
+        step_size = self.step_size(it, 0, steps_per_cycle)
+        p *= step_size
 
-    @torch.no_grad()
-    def propose(self, q: TensorList, p: TensorList, dVdq, it, steps_per_cycle):
         for step in range(self.num_steps):
             step_size = self.step_size(it, step, steps_per_cycle)
-            q += p * step_size
+            q += p
 
             p -= step_size * self.momentum_decay
             p -= TensorList(dVdq()) * step_size
