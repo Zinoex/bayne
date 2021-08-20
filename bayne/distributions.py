@@ -43,3 +43,11 @@ class PriorWeightDistribution(nn.Module):
         prior_pdf = (self.pi * prob_n1 + (1 - self.pi) * prob_n2)
 
         return torch.log(prior_pdf).sum()
+
+    @torch.no_grad()
+    def reset_parameter(self, w):
+        w_n1 = self.dist1.sample(w.size())
+        w_n2 = self.dist2.sample(w.size())
+        sample = (self.pi * w_n1 + (1 - self.pi) * w_n2)
+
+        w.copy_(sample)
