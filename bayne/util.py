@@ -38,6 +38,8 @@ class TensorList(list):
             for x in self:
                 x.div_(other)
 
+        return self
+
     def __imul__(self, other):
         if isinstance(other, TensorList):
             for x, x_prime in zip(self, other):
@@ -45,6 +47,8 @@ class TensorList(list):
         else:
             for x in self:
                 x.mul_(other)
+
+        return self
 
     def __truediv__(self, other):
         return TensorList([x / other for x in self])
