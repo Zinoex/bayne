@@ -26,13 +26,17 @@ class GaussianNegativeLogProb(NegativeLogProb):
         y_pred = self.network(self.X)
 
         neg_log_prob = -self.dist.log_prob(y_pred).sum()
+        neg_log_prior = -self.network.log_prior()
 
+        self.log(neg_log_prob, neg_log_prior)
+
+        return neg_log_prob + neg_log_prior
+
+    def log(self, nll, nlp):
         now = time.time()
         if self.log_nll and now - self.last_log > 1.0:  # 1s
-            print(f'NLL: {neg_log_prob.item()}')
+            print(f'NLL: {nll.item()}, NLP: {nlp.item()}')
             self.last_log = now
-
-        return neg_log_prob - self.network.log_prior()
 
     @torch.enable_grad()
     def dVdq(self):
@@ -68,13 +72,17 @@ class MinibatchGaussianNegativeLogProb(MinibatchNegativeLogProb):
         dist = distributions.Normal(y, self.noise)
 
         neg_log_prob = -self.num_batches * dist.log_prob(y_pred).sum()
+        neg_log_prior = -self.network.log_prior()
 
+        self.log(neg_log_prob, neg_log_prior)
+
+        return neg_log_prob + neg_log_prior
+
+    def log(self, nll, nlp):
         now = time.time()
         if self.log_nll and now - self.last_log > 1.0:  # 1s
-            print(f'NLL: {neg_log_prob.item()}')
+            print(f'NLL: {nll.item()}, NLP: {nlp.item()}')
             self.last_log = now
-
-        return neg_log_prob - self.network.log_prior()
 
     @torch.enable_grad()
     def dVdq(self):
