@@ -162,9 +162,8 @@ class StochasticGradientHMC:
                 return torch.autograd.grad(output, q)
 
         # Sample initial momentum
-        momentum_dist = distributions.Normal(0, 1)
+        momentum_dist = distributions.Normal(0, self.step_size)
         p = TensorList([momentum_dist.sample(param.size()) for param in q])
-        p *= self.step_size
 
         for step in range(self.num_steps):
             q += p
@@ -256,11 +255,9 @@ class CyclicalStochasticGradientHMC:
         Therefore, we assume it is a parameterless function.
         """
         # Sample initial momentum
-        momentum_dist = distributions.Normal(0, 1)
-        p = TensorList([momentum_dist.sample(param.size()) for param in q])
-
         step_size = self.step_size(it, 0, steps_per_cycle)
-        p *= step_size
+        momentum_dist = distributions.Normal(0, step_size)
+        p = TensorList([momentum_dist.sample(param.size()) for param in q])
 
         for step in range(self.num_steps):
             step_size = self.step_size(it, step, steps_per_cycle)
