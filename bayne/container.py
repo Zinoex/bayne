@@ -69,12 +69,12 @@ class ParameterQueue(nn.Module):
 
     def state_dict(self, destination=None, prefix='', keep_vars=False):
         state_dict = super().state_dict(destination, prefix, keep_vars)
-        state_dict['deque'] = list(self.deque)
+        state_dict['deque'] = torch.stack(self.deque)
 
         return state_dict
 
     def load_state_dict(self, state_dict, strict=True):
-        self.extend(state_dict.pop('deque'))
+        self.extend([p for p in state_dict.pop('deque')])
 
         super().load_state_dict(state_dict, strict)
 
