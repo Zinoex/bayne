@@ -23,10 +23,11 @@ class MonteCarloBNN(nn.Module, ResetableModule):
         self.apply(_replace_parameter)
 
     def sample(self, negative_log_prob, num_samples=200, reject=200, progress_bar=True):
-        def _set_maxlen(m):
+        def _set_maxlen_and_active_index(m):
             if isinstance(m, ParameterQueue):
                 m.maxlen = num_samples
-        self.apply(_set_maxlen)
+                m.active_index = None
+        self.apply(_set_maxlen_and_active_index)
 
         self.sampler.sample(self, negative_log_prob, num_samples, reject, progress_bar)
         self.num_states = num_samples
