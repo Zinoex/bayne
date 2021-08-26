@@ -1,9 +1,5 @@
-import itertools
-import types
-
 import torch
 from torch import nn
-from torch.nn import Parameter
 
 from bayne.container import ParameterQueue
 from bayne.distributions import PriorWeightDistribution
@@ -33,7 +29,7 @@ class MonteCarloBNN(nn.Module, ResetableModule):
         self.apply(_set_maxlen)
 
         self.sampler.sample(self, negative_log_prob, num_samples, reject, progress_bar)
-        self.num_states = self.num_samples
+        self.num_states = num_samples
 
     def forward(self, *args, state_idx=None, **kwargs):
         def _set_active_index(m):
@@ -44,7 +40,7 @@ class MonteCarloBNN(nn.Module, ResetableModule):
         return self.network(*args, **kwargs)
 
     def predict_dist(self, *args, num_samples=None, dim=0, **kwargs):
-        preds = [self(*args, **kwargs, state_idx=idx) for idx in range(len(self.states))]
+        preds = [self(*args, **kwargs, state_idx=idx) for idx in range(self.num_states)]
         preds = torch.stack(preds, dim=dim)
         return preds
 
