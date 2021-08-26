@@ -8,13 +8,13 @@ from bayne.util import TensorList
 
 
 class NegativeLogProb(abc.ABC):
-    def __init__(self, log_nll=0.1):
+    def __init__(self, log_nll=1.0):   # 1s
         self.log_nll = log_nll
         self.last_log = time.time()
 
     def log(self, nll, nlp):
         now = time.time()
-        if self.log_nll is not None and now - self.last_log > self.log_nll:  # 1s
+        if self.log_nll is not None and now - self.last_log > self.log_nll:
             print(f'NLL: {nll.item()}, NLP: {nlp.item()}')
             self.last_log = now
 
@@ -50,7 +50,7 @@ class MinibatchNegativeLogProb(NegativeLogProb, abc.ABC):
 
 
 class MinibatchGaussianNegativeLogProb(MinibatchNegativeLogProb):
-    def __init__(self, network, dataloader, noise=0.1, log_nll=0.1):
+    def __init__(self, network, dataloader, noise=0.1, log_nll=1.0):
         super(MinibatchGaussianNegativeLogProb, self).__init__(log_nll)
 
         self.network = network
