@@ -18,7 +18,7 @@ class MonteCarloBNN(nn.Module, ResetableModule):
         def _replace_parameter(m):
             for name, param in list(m.named_parameters(recurse=False)):
                 del m._parameters[name]
-                queue = ParameterQueue(param, maxlen=None)
+                queue = ParameterQueue(param.data, maxlen=None)
                 setattr(m, name, queue)
         self.apply(_replace_parameter)
 
