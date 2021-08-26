@@ -65,7 +65,7 @@ class ParameterQueue(nn.Module):
         return self
 
     def save(self):
-        self.append(self.cur.data.detach().clone())
+        self.append(self.cur.detach().clone())
 
     def state_dict(self, destination=None, prefix='', keep_vars=False):
         state_dict = super().state_dict(destination, prefix, keep_vars)
@@ -74,7 +74,7 @@ class ParameterQueue(nn.Module):
         return state_dict
 
     def load_state_dict(self, state_dict, strict=True):
-        self.extend([p for p in state_dict.pop('deque')])
+        self.extend(state_dict.pop('deque').unbind())
 
         super().load_state_dict(state_dict, strict)
 

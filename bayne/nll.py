@@ -8,19 +8,24 @@ from bayne.util import TensorList
 
 
 class NegativeLogProb(abc.ABC):
-    @abc.abstractmethod
-    def dVdq(self):
-        raise NotImplementedError()
+    def __init__(self, log_nll=0.1):
+        self.log_nll = log_nll
+        self.last_log = time.time()
+
+    def log(self, nll, nlp):
+        now = time.time()
+        if self.log_nll is not None and now - self.last_log > self.log_nll:  # 1s
+            print(f'NLL: {nll.item()}, NLP: {nlp.item()}')
+            self.last_log = now
 
 
 class GaussianNegativeLogProb(NegativeLogProb):
-    def __init__(self, network, X, y, noise=0.1, log_nll=True):
+    def __init__(self, network, X, y, noise=0.1, log_nll=1.0):
+        super(GaussianNegativeLogProb, self).__init__(log_nll)
+
         self.network = network
         self.X, self.y = X, y
         self.dist = distributions.Normal(self.y, noise)
-
-        self.log_nll = log_nll
-        self.last_log = time.time()
 
     def __call__(self, *args, **kwargs):
         y_pred = self.network(self.X)
@@ -31,12 +36,6 @@ class GaussianNegativeLogProb(NegativeLogProb):
         self.log(neg_log_prob, neg_log_prior)
 
         return neg_log_prob + neg_log_prior
-
-    def log(self, nll, nlp):
-        now = time.time()
-        if self.log_nll and now - self.last_log > 1.0:  # 1s
-            print(f'NLL: {nll.item()}, NLP: {nlp.item()}')
-            self.last_log = now
 
     @torch.enable_grad()
     def dVdq(self):
@@ -51,15 +50,14 @@ class MinibatchNegativeLogProb(NegativeLogProb, abc.ABC):
 
 
 class MinibatchGaussianNegativeLogProb(MinibatchNegativeLogProb):
-    def __init__(self, network, dataloader, noise=0.1, log_nll=True):
+    def __init__(self, network, dataloader, noise=0.1, log_nll=0.1):
+        super(MinibatchGaussianNegativeLogProb, self).__init__(log_nll)
+
         self.network = network
         self.dataloader = dataloader
         self.num_batches = len(self.dataloader)
         self.iter = iter(self.dataloader)
         self.noise = noise
-
-        self.log_nll = log_nll
-        self.last_log = time.time()
 
     def __call__(self, *args, **kwargs):
         try:
@@ -77,12 +75,6 @@ class MinibatchGaussianNegativeLogProb(MinibatchNegativeLogProb):
         self.log(neg_log_prob, neg_log_prior)
 
         return neg_log_prob + neg_log_prior
-
-    def log(self, nll, nlp):
-        now = time.time()
-        if self.log_nll and now - self.last_log > 1.0:  # 1s
-            print(f'NLL: {nll.item()}, NLP: {nlp.item()}')
-            self.last_log = now
 
     @torch.enable_grad()
     def dVdq(self):
