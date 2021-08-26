@@ -17,7 +17,6 @@ class HamiltonianMonteCarlo:
         self.kinetic_energy_type = 'log_prob_sum'  # Choices: log_prob_sum, dot_product
 
     def sample(self, mcmc, negative_log_prob, num_samples=1000, reject=0, progress_bar=True):
-        states = []
         num_accept = 0
 
         r = trange if progress_bar else range
@@ -25,14 +24,13 @@ class HamiltonianMonteCarlo:
 
         for idx in r(num_samples + reject):
             if idx >= reject:
-                states.append(copy.deepcopy(mcmc.subnetwork_state_dict()))
+                mcmc.save()
 
             accept = self.step(params, negative_log_prob)
             if accept:
                 num_accept += 1
 
         print(f'Acceptance ratio: {num_accept / (num_samples + reject)}')
-        return states
 
     @torch.no_grad()
     def step(self, params, negative_log_prob):
