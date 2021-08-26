@@ -56,3 +56,20 @@ class MonteCarloBNN(nn.Module, ResetableModule):
             if isinstance(m, ParameterQueue):
                 m.save()
         self.apply(_save)
+
+    def zero_grad(self, set_to_none: bool = False) -> None:
+        super().zero_grad(set_to_none)
+
+        def _zero_grad_param_queue(m):
+            if isinstance(m, ParameterQueue):
+                for p in m.deque:
+                    if p.grad is not None:
+                        if set_to_none:
+                            p.grad = None
+                        else:
+                            if p.grad.grad_fn is not None:
+                                p.grad.detach_()
+                            else:
+                                p.grad.requires_grad_(False)
+                            p.grad.zero_()
+        self.apply(_zero_grad_param_queue)
