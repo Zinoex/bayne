@@ -116,3 +116,19 @@ class ParameterQueue(nn.Module):
 
         args = list(map(convert_arg, args))
         return func(*args, **kwargs)
+
+    def active_weights(self):
+        return torch.stack([self.deque[idx] for idx in self.active_index])
+
+    @property
+    def shape(self):
+        return self.cur.shape
+
+    def dim(self):
+        return self.cur.dim()
+
+    def size(self, dim=None):
+        return self.cur.size(dim)
+
+    def uniform_(self, lower, upper):
+        self.cur.uniform_(lower, upper)
