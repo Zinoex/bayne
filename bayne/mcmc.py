@@ -1,3 +1,4 @@
+import functools
 import math
 
 import torch
@@ -64,7 +65,29 @@ class MonteCarloBNN(nn.Module, ResetableModule):
 
 
 class BatchModule(nn.Module):
-    pass
+    def __init__(self):
+        super(BatchModule, self).__init__()
+
+        self.full = False
+
+    @staticmethod
+    def set_full(module):
+        module.full = True
+
+    @staticmethod
+    def reset_full(module):
+        module.full = False
+
+
+class BatchModeFull:
+    def __init__(self, network):
+        self.network = network
+
+    def __enter__(self):
+        self.network.apply(BatchModule.set_full)
+
+    def __exit__(self, type, value, traceback):
+        self.network.apply(BatchModule.reset_full)
 
 
 class BatchLinear(BatchModule):
@@ -95,18 +118,26 @@ class BatchLinear(BatchModule):
             if self.weight.active_index is None or isinstance(self.weight.active_index, int):
                 return F.linear(input, self.weight, self.bias)
 
-            if input.dim() == 2:
-                input = input.unsqueeze(-1)
-
             weight = self.weight.active_weights()
+            if self.full:
+                if input.dim() != 3:
+                    input = input.unsqueeze(0).expand(weight.size(0), -1, -1)
+            else:
+                input = input.unsqueeze(1)
+
+            input = input.transpose(-1, -2)
+            assert input.size(0) == weight.size(0), 'Incompatible size for batch linear layer'
+
             if self.bias is None:
                 res = torch.bmm(input, weight)
             else:
                 bias = self.bias.active_weights()
                 res = torch.baddbmm(bias.unsqueeze(-1), weight, input)
 
-            if res.size(-1) == 1:
-                res = res.squeeze(-1)
+            if self.full:
+                res = res.transpose(-1, -2)
+            else:
+                res = res.squeeze(1)
 
             return res
 
@@ -143,17 +174,8 @@ class BatchMonteCarloBNN(nn.Module, ResetableModule):
         return self.network(*args, **kwargs)
 
     def predict_dist(self, *args, num_samples=None, dim=0, **kwargs):
-        def _expand(arg):
-            if isinstance(arg, list) or isinstance(arg, tuple):
-                return [_expand(item) for item in arg]
-            elif torch.is_tensor(arg):
-                return arg.transpose(0, 1).unsqueeze(0).expand(self.num_states, -1, -1)
-            else:
-                return arg
-
-        args = [_expand(arg) for arg in args]
-        preds = self(*args, **kwargs, state_indices=torch.arange(self.num_states)).transpose(-1, -2)
-        return preds
+        with BatchModeFull(self):
+            return self(*args, **kwargs, state_indices=torch.arange(self.num_states))
 
     def predict_mean(self, *args, num_samples=None, dim=0, **kwargs):
         preds = self.predict_dist(*args, dim=dim, **kwargs)
