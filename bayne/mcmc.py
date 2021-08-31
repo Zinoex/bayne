@@ -143,7 +143,15 @@ class BatchMonteCarloBNN(nn.Module, ResetableModule):
         return self.network(*args, **kwargs)
 
     def predict_dist(self, *args, num_samples=None, dim=0, **kwargs):
-        args = [arg.transpose(0, 1).unsqueeze(0).expand(self.num_states, -1, -1) for arg in args]
+        def _expand(arg):
+            if isinstance(arg, list) or isinstance(arg, tuple):
+                return [_expand(item) for item in arg]
+            elif torch.is_tensor(arg):
+                return arg.transpose(0, 1).unsqueeze(0).expand(self.num_states, -1, -1)
+            else:
+                return arg
+
+        args = [_expand(arg) for arg in args]
         preds = self(*args, **kwargs, state_indices=torch.arange(self.num_states)).transpose(-1, -2)
         return preds
 
