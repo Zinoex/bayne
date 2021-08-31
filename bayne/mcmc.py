@@ -122,10 +122,10 @@ class BatchLinear(BatchModule):
             if self.full:
                 if input.dim() != 3:
                     input = input.unsqueeze(0).expand(weight.size(0), -1, -1)
+                    input = input.transpose(-1, -2)
             else:
-                input = input.unsqueeze(1)
+                input = input.unsqueeze(-1)
 
-            input = input.transpose(-1, -2)
             assert input.size(0) == weight.size(0), 'Incompatible size for batch linear layer'
 
             if self.bias is None:
@@ -137,7 +137,7 @@ class BatchLinear(BatchModule):
             if self.full:
                 res = res.transpose(-1, -2)
             else:
-                res = res.squeeze(1)
+                res = res.squeeze(-1)
 
             return res
 
