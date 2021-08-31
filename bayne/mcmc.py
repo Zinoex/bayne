@@ -122,7 +122,8 @@ class BatchLinear(BatchModule):
             if self.full:
                 if input.dim() != 3:
                     input = input.unsqueeze(0).expand(weight.size(0), -1, -1)
-                    input = input.transpose(-1, -2)
+
+                input = input.transpose(-1, -2)
             else:
                 input = input.unsqueeze(-1)
 
