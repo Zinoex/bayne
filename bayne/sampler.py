@@ -65,7 +65,7 @@ class HamiltonianMonteCarlo(dVdqMixin):
 
         # Sample initial momentum
         momentum_dist = distributions.Normal(0, 1)
-        p0 = TensorList([momentum_dist.sample(param.size()) for param in q0])
+        p0 = TensorList([momentum_dist.sample(param.size()).to(param.device) for param in q0])
 
         # Compute initial energy before we start changing parameters
         start_log_p = negative_log_prob() + self.kinetic_energy(p0)
@@ -152,7 +152,7 @@ class StochasticGradientHMC(dVdqMixin):
 
         # Sample initial momentum
         momentum_dist = distributions.Normal(0, math.sqrt(self.step_size))
-        v = TensorList([momentum_dist.sample(param.size()) for param in q])
+        v = TensorList([momentum_dist.sample(param.size()).to(param.device) for param in q])
 
         for step in range(self.num_steps):
             q += v
@@ -161,7 +161,7 @@ class StochasticGradientHMC(dVdqMixin):
             v -= TensorList(dVdq()) * self.step_size
             sigma = torch.sqrt(torch.tensor(2 * (self.momentum_decay - self.grad_noise) * self.step_size))
             dist = distributions.Normal(0, sigma)
-            samples = TensorList([dist.sample(x.size()) for x in v])
+            samples = TensorList([dist.sample(x.size()).to(x.device) for x in v])
             v += samples
 
 
@@ -236,7 +236,7 @@ class CyclicalStochasticGradientHMC(dVdqMixin):
         # Sample initial momentum
         step_size = self.step_size(it, 0, steps_per_cycle)
         momentum_dist = distributions.Normal(0, math.sqrt(step_size))
-        v = TensorList([momentum_dist.sample(param.size()) for param in q])
+        v = TensorList([momentum_dist.sample(param.size()).to(param.device) for param in q])
 
         for step in range(self.num_steps):
             step_size = self.step_size(it, step, steps_per_cycle)
@@ -246,7 +246,7 @@ class CyclicalStochasticGradientHMC(dVdqMixin):
             v -= TensorList(dVdq()) * step_size
             sigma = math.sqrt(2 * (self.momentum_decay - self.grad_noise) * step_size)
             dist = distributions.Normal(0, sigma)
-            samples = TensorList([dist.sample(x.size()) for x in v])
+            samples = TensorList([dist.sample(x.size()).to(x.device) for x in v])
             v += samples
 
 
@@ -321,5 +321,5 @@ class CyclicalStochasticGradientLD(dVdqMixin):
             q -= TensorList(dVdq()) * step_size
             sigma = math.sqrt(2 * step_size)
             dist = distributions.Normal(0, sigma)
-            samples = TensorList([dist.sample(x.size()) for x in q])
+            samples = TensorList([dist.sample(x.size()).to(x.device) for x in q])
             q += samples
