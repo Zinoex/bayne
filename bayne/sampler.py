@@ -233,10 +233,12 @@ class CyclicalStochasticGradientHMC(dVdqMixin):
         the parameters space directly on this network (using pass by reference).
         Therefore, we assume it is a parameterless function.
         """
+        v = TensorList([torch.zeros_like(param) for param in q])
+        samples = TensorList([torch.zeros_like(param) for param in q])
+
         # Sample initial momentum
         step_size = self.step_size(it, 0, steps_per_cycle)
-        momentum_dist = distributions.Normal(0, math.sqrt(step_size))
-        v = TensorList([momentum_dist.sample(param.size()).to(param.device) for param in q])
+        v.normal_(0, math.sqrt(step_size))
 
         for step in range(self.num_steps):
             step_size = self.step_size(it, step, steps_per_cycle)
@@ -245,8 +247,7 @@ class CyclicalStochasticGradientHMC(dVdqMixin):
             v *= 1 - self.momentum_decay
             v -= TensorList(dVdq()) * step_size
             sigma = math.sqrt(2 * (self.momentum_decay - self.grad_noise) * step_size)
-            dist = distributions.Normal(0, sigma)
-            samples = TensorList([dist.sample(x.size()).to(x.device) for x in v])
+            samples.normal_(0, sigma)
             v += samples
 
 
