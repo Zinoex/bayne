@@ -21,7 +21,7 @@ class ParameterQueue(nn.Module):
         super(ParameterQueue, self).__init__()
         self.deque = []
         self.maxlen = maxlen
-        self.__active_index = None
+        self._active_index = None
         self.cached_weights = None
 
         self.cur = nn.Parameter(cur)
@@ -29,11 +29,13 @@ class ParameterQueue(nn.Module):
         if parameters is not None:
             self.extend(parameters)
 
-    def get_active_index(self):
-        return self.__active_index
+    @property
+    def active_index(self):
+        return self._active_index
 
-    def set_active_index(self, active_index):
-        self.__active_index = active_index
+    @active_index.setter
+    def active_index(self, active_index):
+        self._active_index = active_index
         self.cached_weights = None
 
     def __len__(self) -> int:
