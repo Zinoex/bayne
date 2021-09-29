@@ -21,12 +21,20 @@ class ParameterQueue(nn.Module):
         super(ParameterQueue, self).__init__()
         self.deque = []
         self.maxlen = maxlen
-        self.active_index = None
+        self.__active_index = None
+        self.cached_weights = None
 
         self.cur = nn.Parameter(cur)
 
         if parameters is not None:
             self.extend(parameters)
+
+    def get_active_index(self):
+        return self.__active_index
+
+    def set_active_index(self, active_index):
+        self.__active_index = active_index
+        self.cached_weights = None
 
     def __len__(self) -> int:
         return len(self.deque)
@@ -118,7 +126,10 @@ class ParameterQueue(nn.Module):
         return func(*args, **kwargs)
 
     def active_weights(self):
-        return torch.stack([self.deque[idx] for idx in self.active_index])
+        if self.cached_weights is None:
+            self.cached_weights = torch.stack([self.deque[idx] for idx in self.active_index])
+
+        return self.cached_weights
 
     @property
     def shape(self):
