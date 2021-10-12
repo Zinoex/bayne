@@ -247,9 +247,7 @@ class CyclicalStochasticGradientHMC(dVdqMixin):
 
         for step_size, sigma in zip(step_sizes.tolist(), sigmas.tolist()):
             q += v
-
-            grad = TensorList(dVdq())
-            v.sg_hmc_momentum_update(grad, step_size, 1 - self.momentum_decay, sigma)
+            v.sg_hmc_momentum_update(dVdq(), step_size, 1 - self.momentum_decay, sigma)
 
 
 class CyclicalStochasticGradientLD(dVdqMixin):
