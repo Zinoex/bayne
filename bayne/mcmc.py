@@ -1,4 +1,3 @@
-import functools
 import math
 
 import torch
@@ -6,7 +5,7 @@ from torch import nn
 from torch import Tensor
 import torch.nn.functional as F
 
-from bayne.container import ParameterQueue
+from bayne.containers import ParameterQueue
 from bayne.distributions import PriorWeightDistribution
 from bayne.sampler import HamiltonianMonteCarlo
 from bayne.util import ResetableModule

@@ -3,11 +3,11 @@ import math
 
 import numpy as np
 import torch
-from torch import optim, distributions
+from torch import distributions
 from tqdm import trange
 
 from bayne.nll import NegativeLogProb
-from bayne.util import TensorList
+from bayne.containers import TensorList
 
 
 class dVdqMixin:
@@ -102,7 +102,9 @@ class HamiltonianMonteCarlo(dVdqMixin):
     def leapfrog(self, q: TensorList, p: TensorList, dVdq):
         # We don't take a step backwards, but just move the negation from dVdq because
         # negation of a list is rarely a good idea.
+        p.step(dVdq(), -self.step_size / 2)
         p -= TensorList(dVdq()) * (self.step_size / 2)
+
 
         for _ in range(self.num_steps - 1):
             q += p * self.step_size
@@ -151,18 +153,22 @@ class StochasticGradientHMC(dVdqMixin):
         """
 
         # Sample initial momentum
-        momentum_dist = distributions.Normal(0, math.sqrt(self.step_size))
-        v = TensorList([momentum_dist.sample(param.size()).to(param.device) for param in q])
+        v = TensorList.zeroes_like(q)
+        v.normal_(0, math.sqrt(self.step_size))
+        sigma = torch.sqrt(torch.tensor(2 * (self.momentum_decay - self.grad_noise) * self.step_size))
 
         for step in range(self.num_steps):
             q += v
 
-            v *= 1 - self.momentum_decay
-            v -= TensorList(dVdq()) * self.step_size
-            sigma = torch.sqrt(torch.tensor(2 * (self.momentum_decay - self.grad_noise) * self.step_size))
-            dist = distributions.Normal(0, sigma)
-            samples = TensorList([dist.sample(x.size()).to(x.device) for x in v])
-            v += samples
+            grad = dVdq()
+            v.sg_hmc_momentum_update(grad, self.step_size, 1 - self.momentum_decay, sigma)
+
+
+@torch.jit.script
+def step_sizes_batch(it: int, num_steps: int, steps_per_cycle: int, initial_step_size: float) -> torch.Tensor:
+    step = torch.arange(num_steps) + it * num_steps
+    iteration_percentage = step / float(steps_per_cycle)
+    return initial_step_size / 2 * (torch.cos(math.pi * iteration_percentage) + 1)
 
 
 class CyclicalStochasticGradientHMC(dVdqMixin):
@@ -175,8 +181,9 @@ class CyclicalStochasticGradientHMC(dVdqMixin):
         assert momentum_decay >= grad_noise
         self.reset_after_cycle = reset_after_cycle
 
+    @torch.no_grad()
     def sample(self, mcmc, negative_log_prob, num_samples=20, reject=200, progress_bar=True, inner_progress_bar=False):
-        assert num_samples % self.num_cycles == 0 and reject % self.num_cycles == 0,\
+        assert num_samples % self.num_cycles == 0 and reject % self.num_cycles == 0, \
             f'Number of samples ({num_samples}) and rejects ({reject}) should be a multiple of the number of cycles ({self.num_cycles})'
         iterations_per_cycle = int((num_samples + reject) // self.num_cycles)
         steps_per_cycle = iterations_per_cycle * self.num_steps
@@ -190,39 +197,36 @@ class CyclicalStochasticGradientHMC(dVdqMixin):
         dVdq = self.grad(params, negative_log_prob)
 
         r = trange(self.num_cycles, desc='Cycle') if progress_bar else range(self.num_cycles)
-        for cycle in r:
-            if self.reset_after_cycle:
-                mcmc.reset()
+        for _ in r:
+            self.cycle(mcmc, params, dVdq, iterations_per_cycle, exploration_steps_per_cycle, steps_per_cycle, inner_progress_bar)
 
-            cr = trange(iterations_per_cycle, desc='Cycle iteration') if inner_progress_bar else range(iterations_per_cycle)
+    def cycle(self, mcmc, params, dVdq, iterations_per_cycle, exploration_steps_per_cycle, steps_per_cycle, inner_progress_bar):
+        if self.reset_after_cycle:
+            mcmc.reset()
 
-            for it in cr:
-                if it == 0:
-                    print('Starting exploration')
-                elif it == exploration_steps_per_cycle:
-                    print('Starting sampling')
+        cr = trange(iterations_per_cycle, desc='Cycle iteration') if inner_progress_bar else range(iterations_per_cycle)
+        for it in cr:
+            if it == 0:
+                print('Starting exploration')
+            elif it == exploration_steps_per_cycle:
+                print('Starting sampling')
 
-                exploration = it < exploration_steps_per_cycle
+            exploration = it < exploration_steps_per_cycle
 
-                if exploration:
-                    self.step_exploration(params, dVdq, it, steps_per_cycle)
-                else:
-                    self.step_sampling(params, dVdq, it, steps_per_cycle)
-                    mcmc.save()
+            if exploration:
+                self.step_exploration(params, dVdq, it, steps_per_cycle)
+            else:
+                self.step_sampling(params, dVdq, it, steps_per_cycle)
+                mcmc.save()
 
-    def step_size(self, it, step, steps_per_cycle):
-        step = it * self.num_steps + step
-        iteration_percentage = step / float(steps_per_cycle)
-        return self.initial_step_size / 2 * (math.cos(math.pi * iteration_percentage) + 1)
+    def step_sizes(self, it, steps_per_cycle):
+        return step_sizes_batch(it, self.num_steps, steps_per_cycle, self.initial_step_size)
 
-    @torch.no_grad()
     def step_exploration(self, q, dVdq, it, steps_per_cycle):
-        for step in range(self.num_steps):
-            step_size = self.step_size(it, step, steps_per_cycle)
+        step_sizes = self.step_sizes(it, steps_per_cycle).tolist()
+        for step_size in step_sizes:
+            q.step(dVdq(), step_size)
 
-            q -= TensorList(dVdq()) * step_size
-
-    @torch.no_grad()
     def step_sampling(self, q, dVdq, it, steps_per_cycle):
         """
         Performs a single forward evolution of SG Hamiltonian Monte Carlo.
@@ -234,21 +238,18 @@ class CyclicalStochasticGradientHMC(dVdqMixin):
         Therefore, we assume it is a parameterless function.
         """
         v = TensorList.zeroes_like(q)
-        samples = TensorList.zeroes_like(q)
+
+        step_sizes = self.step_sizes(it, steps_per_cycle)
+        sigmas = torch.sqrt(2 * (self.momentum_decay - self.grad_noise) * step_sizes)
 
         # Sample initial momentum
-        step_size = self.step_size(it, 0, steps_per_cycle)
-        v.normal_(0, math.sqrt(step_size))
+        v.normal_(0, math.sqrt(step_sizes[0]))
 
-        for step in range(self.num_steps):
-            step_size = self.step_size(it, step, steps_per_cycle)
+        for step_size, sigma in zip(step_sizes.tolist(), sigmas.tolist()):
             q += v
 
-            v *= 1 - self.momentum_decay
-            v -= TensorList(dVdq()) * step_size
-            sigma = math.sqrt(2 * (self.momentum_decay - self.grad_noise) * step_size)
-            samples.normal_(0, sigma)
-            v += samples
+            grad = TensorList(dVdq())
+            v.sg_hmc_momentum_update(grad, step_size, 1 - self.momentum_decay, sigma)
 
 
 class CyclicalStochasticGradientLD(dVdqMixin):

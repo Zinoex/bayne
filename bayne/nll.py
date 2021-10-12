@@ -4,8 +4,6 @@ import time
 import torch
 from torch import distributions
 
-from bayne.util import TensorList
-
 
 class NegativeLogProb(abc.ABC):
     def __init__(self, log_nll=1.0):   # 1s
