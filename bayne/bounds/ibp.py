@@ -29,8 +29,11 @@ class SampleIntervalBoundPropagation(Bounds):
     }
     """
 
-    def interval_bounds(self, model: nn.Sequential, input_bounds: Tuple[torch.Tensor, torch.Tensor]):
+    @torch.no_grad()
+    def interval_bounds(self, model: nn.Sequential, input_bounds: Tuple[torch.Tensor, torch.Tensor], include_intermediate=False):
         lower, upper = input_bounds
+
+        LBs, UBs = [], []
 
         for module in model:
             if isinstance(module, (nn.Linear, VariationalLinear)):
@@ -43,7 +46,14 @@ class SampleIntervalBoundPropagation(Bounds):
                 lower = module(lower)
                 upper = module(upper)
 
-        return lower, upper
+            LBs.append(lower)
+            UBs.append(upper)
 
+        if include_intermediate:
+            return LBs, UBs
+        else:
+            return lower, upper
+
+    @torch.no_grad()
     def linear_bounds(self, model: nn.Sequential, input_bounds: Tuple[torch.Tensor, torch.Tensor]):
         raise NotImplementedError()
