@@ -12,12 +12,15 @@ class CROWNIntervalBoundPropagation(Bounds):
 
     @torch.no_grad()
     def interval_bounds(self, model, input_bounds):
-        pass
+        linear_bounds = self.linear_bounds(model, input_bounds)
+        # TODO: Solve LP to find which corner is optimal
 
     @torch.no_grad()
     def linear_bounds(self, model, input_bounds):
         alpha, beta = self.compute_alpha_beta(model, input_bounds)
         linear_bounds = self.compute_linear_bounds(model, alpha, beta)
+
+        return linear_bounds
 
     def compute_alpha_beta(self, model, input_bounds):
         LBs, UBs = self.ibp.interval_bounds(model, input_bounds)
@@ -159,17 +162,36 @@ class CROWNIntervalBoundPropagation(Bounds):
 
     def compute_linear_bounds(self, model, alpha, beta):
         output_size = model[-1].weight.size(0)
-        num_linear = sum([isinstance(module, nn.Linear) for module in model])
+        linear_modules = [module for module in model if isinstance(module, nn.Linear)]
+        num_linear = len(linear_modules)
 
-        gamma_k = torch.eye(output_size)
-        gamma_accumulator = 0
+        Gamma_k = torch.eye(output_size)
+        Gamma_weight = None
+        Gamma_accumulator = 0
 
-        omega_k = torch.eye(output_size)
-        omega_accumulator = 0
+        Omega_k = torch.eye(output_size)
+        Omega_weight = None
+        Omega_accumulator = 0
 
-        for k, module in reversed(model):
-            gamma_weight = None if k == num_linear else torch.matmul(gamma_k, module.weight)
-            bias_delta_k = (module.bias + self._delta(k, num_linear, gamma_weight, beta[k])).permute(-1, -2)  # Then multiply pointwise by gamma_k and sum along last axis
+        for k, module in reversed(list(zip(range(1, num_linear + 1), linear_modules))):
+            if isinstance(module, nn.Linear):
+                # Upper bound
+                bias_delta_k = (module.bias + self._delta(k, num_linear, Gamma_weight, None if k == num_linear else beta[k])).permute(-1, -2)
+                Gamma_accumulator += (Gamma_k * bias_delta_k).sum(dim=-1)
+
+                Gamma_weight = torch.matmul(Gamma_k, module.weight)
+                lambda_k = self._lambda(k, Gamma_weight, alpha[k - 1])
+                Gamma_k = Gamma_weight * lambda_k
+
+                # Lower bound
+                bias_theta_k = (module.bias + self._theta(k, num_linear, Omega_weight, None if k == num_linear else beta[k])).permute(-1, -2)
+                Omega_accumulator += (Omega_k * bias_theta_k).sum(dim=-1)
+
+                Omega_weight = torch.matmul(Omega_k, module.weight)
+                omega_k = self._omega(k, Omega_weight, alpha[k - 1])
+                Omega_k = Omega_weight * omega_k
+
+        return (Omega_k, Omega_accumulator), (Gamma_k, Gamma_accumulator)
 
     def _delta(self, k, m, gamma_weight, beta):
         if k == m:
