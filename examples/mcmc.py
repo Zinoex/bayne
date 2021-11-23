@@ -3,8 +3,8 @@ from torch.nn import Linear
 from torch.utils.data import DataLoader
 
 from bayne.mcmc import MonteCarloBNN
-from bayne.nll import GaussianNegativeLogProb
-from bayne.sampler import HamiltonianMonteCarlo
+from bayne.nll import GaussianNegativeLogProb, MinibatchGaussianNegativeLogProb
+from bayne.sampler import HamiltonianMonteCarlo, StochasticGradientHMC
 from examples.noisy_sine import NoisySineDataset
 from examples.test import test
 
@@ -15,34 +15,28 @@ from examples.test import test
 ################################################################
 
 
-class ExampleMonteCarloBNN(nn.Module):
+class ExampleMonteCarloBNN(nn.Sequential):
     def __init__(self, in_features, out_features):
-        super().__init__()
-
-        self.model = nn.Sequential(
+        super().__init__(
             Linear(in_features, 128),
-            nn.SiLU(),
+            nn.Tanh(),
             Linear(128, 64),
-            nn.SiLU(),
+            nn.Tanh(),
             Linear(64, out_features)
         )
-
-    def forward(self, x):
-        return self.model(x)
 
 
 def train(model):
     dataset = NoisySineDataset()
-    dataloader = DataLoader(dataset, batch_size=len(dataset), shuffle=True, num_workers=0)
-    X, y = next(iter(dataloader))
-    negative_log_prob = GaussianNegativeLogProb(model, X, y)
+    dataloader = DataLoader(dataset, batch_size=16, shuffle=True, num_workers=0)
+    negative_log_prob = MinibatchGaussianNegativeLogProb(model, dataloader)
 
     model.sample(negative_log_prob, num_samples=1000, reject=20)
 
 
 def main():
     subnetwork = ExampleMonteCarloBNN(1, 1)
-    model = MonteCarloBNN(subnetwork, sampler=HamiltonianMonteCarlo(step_size=5e-4))
+    model = MonteCarloBNN(subnetwork, sampler=StochasticGradientHMC(step_size=1e-6))
     train(model)
     test(model, 'HMC')
 

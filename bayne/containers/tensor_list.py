@@ -54,14 +54,27 @@ def tensorlist_zeroes_like(input: List[Tensor]):
 def tensorlist_step(param: List[Tensor], grad: List[Tensor], step_size: float):
     for x, x_prime in zip(param, grad):
         x_prime.mul_(step_size)
-        x.sub_(x_prime)
+        x.add_(x_prime)
 
 
 @torch.jit.script
 def tensorlist_sg_hmc_momentum_update(momentum: List[Tensor], grad: List[Tensor], step_size: float, alpha: float, sigma: float):
     for x, x_prime in zip(momentum, grad):
+        # v <- alpha * v - step_size * grad(U) + noise
         x.mul_(alpha)
 
+        x_prime.mul_(step_size)
+        x.sub_(x_prime)
+
+        noise = torch.randn_like(x)
+        noise.mul_(sigma)
+        x.add_(noise)
+
+
+@torch.jit.script
+def tensorlist_sg_ld_step(param: List[Tensor], grad: List[Tensor], step_size: float, sigma: float):
+    for x, x_prime in zip(param, grad):
+        # v <- v - step_size * grad(U) + noise
         x_prime.mul_(step_size)
         x.sub_(x_prime)
 
@@ -92,6 +105,9 @@ class TensorList(List[Tensor]):
             tensorlist_inplace_mul_float(self, other)
         return self
 
+    def __neg__(self):
+        return TensorList([-x for x in self])
+
     def normal_(self, mu, sigma):
         tensorlist_inplace_normal(self, mu, sigma)
 
@@ -99,12 +115,17 @@ class TensorList(List[Tensor]):
     def zeroes_like(x):
         return TensorList(tensorlist_zeroes_like(x))
 
-    def step(self, grad, step_size):
+    def step(self, grad, step_size: float):
         tensorlist_step(self, grad, step_size)
 
         return self
 
-    def sg_hmc_momentum_update(self, grad, step_size, alpha, sigma):
+    def sg_hmc_momentum_update(self, grad: List[Tensor], step_size: float, alpha: float, sigma: float):
         tensorlist_sg_hmc_momentum_update(self, grad, step_size, alpha, sigma)
+
+        return self
+
+    def sg_ld_step(self, grad: List[Tensor], step_size: float, sigma: float):
+        tensorlist_sg_ld_step(self, grad, step_size, sigma)
 
         return self

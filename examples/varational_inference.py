@@ -20,9 +20,9 @@ class ExampleVariationalBNN(BaseVariationalBNN):
 
         self.model = nn.Sequential(
             VariationalLinear(in_features, 128),
-            nn.SiLU(),
+            nn.Tanh(),
             VariationalLinear(128, 64),
-            nn.SiLU(),
+            nn.Tanh(),
             VariationalLinear(64, out_features)
         )
 

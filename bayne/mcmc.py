@@ -90,61 +90,61 @@ class BatchModeFull:
 
 
 class BatchLinear(BatchModule):
-        __constants__ = ['in_features', 'out_features']
-        in_features: int
-        out_features: int
+    __constants__ = ['in_features', 'out_features']
+    in_features: int
+    out_features: int
 
-        def __init__(self, in_features: int, out_features: int, bias: bool = True, device=None, dtype=None) -> None:
-            factory_kwargs = {'device': device, 'dtype': dtype}
-            super(BatchLinear, self).__init__()
-            self.in_features = in_features
-            self.out_features = out_features
-            self.weight = ParameterQueue(torch.empty((out_features, in_features), **factory_kwargs))
-            if bias:
-                self.bias = ParameterQueue(torch.empty(out_features, **factory_kwargs))
-            else:
-                self.register_parameter('bias', None)
-            self.reset_parameters()
+    def __init__(self, in_features: int, out_features: int, bias: bool = True, device=None, dtype=None) -> None:
+        factory_kwargs = {'device': device, 'dtype': dtype}
+        super(BatchLinear, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight = ParameterQueue(torch.empty((out_features, in_features), **factory_kwargs))
+        if bias:
+            self.bias = ParameterQueue(torch.empty(out_features, **factory_kwargs))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
 
-        def reset_parameters(self) -> None:
-            nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
-            if self.bias is not None:
-                fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
-                bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
-                nn.init.uniform_(self.bias, -bound, bound)
+    def reset_parameters(self) -> None:
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        if self.bias is not None:
+            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+            nn.init.uniform_(self.bias, -bound, bound)
 
-        def forward(self, input: Tensor) -> Tensor:
-            if self.weight.active_index is None or isinstance(self.weight.active_index, int):
-                return F.linear(input, self.weight, self.bias)
+    def forward(self, input: Tensor) -> Tensor:
+        if self.weight.active_index is None or isinstance(self.weight.active_index, int):
+            return F.linear(input, self.weight, self.bias)
 
-            weight = self.weight.active_weights()
-            if self.full:
-                if input.dim() != 3:
-                    input = input.unsqueeze(0).expand(weight.size(0), -1, -1)
+        weight = self.weight.active_weights()
+        if self.full:
+            if input.dim() != 3:
+                input = input.unsqueeze(0).expand(weight.size(0), -1, -1)
 
-                input = input.transpose(-1, -2)
-            else:
-                input = input.unsqueeze(-1)
+            input = input.transpose(-1, -2)
+        else:
+            input = input.unsqueeze(-1)
 
-            assert input.size(0) == weight.size(0), 'Incompatible size for batch linear layer'
+        assert input.size(0) == weight.size(0), 'Incompatible size for batch linear layer'
 
-            if self.bias is None:
-                res = torch.bmm(input, weight)
-            else:
-                bias = self.bias.active_weights()
-                res = torch.baddbmm(bias.unsqueeze(-1), weight, input)
+        if self.bias is None:
+            res = torch.bmm(input, weight)
+        else:
+            bias = self.bias.active_weights()
+            res = torch.baddbmm(bias.unsqueeze(-1), weight, input)
 
-            if self.full:
-                res = res.transpose(-1, -2)
-            else:
-                res = res.squeeze(-1)
+        if self.full:
+            res = res.transpose(-1, -2)
+        else:
+            res = res.squeeze(-1)
 
-            return res
+        return res
 
-        def extra_repr(self) -> str:
-            return 'in_features={}, out_features={}, bias={}'.format(
-                self.in_features, self.out_features, self.bias is not None
-            )
+    def extra_repr(self) -> str:
+        return 'in_features={}, out_features={}, bias={}'.format(
+            self.in_features, self.out_features, self.bias is not None
+        )
 
 
 class BatchMonteCarloBNN(nn.Module, ResetableModule):

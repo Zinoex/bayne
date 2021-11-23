@@ -6,20 +6,20 @@ from torch import distributions
 
 
 class NegativeLogProb(abc.ABC):
-    def __init__(self, log_nll=1.0):   # 1s
-        self.log_nll = log_nll
+    def __init__(self, log_frequency=1.0):   # 1s
+        self.log_frequency = log_frequency
         self.last_log = time.time()
 
     def log(self, nll, nlp):
         now = time.time()
-        if self.log_nll is not None and now - self.last_log > self.log_nll:
+        if self.log_frequency is not None and now - self.last_log > self.log_frequency:
             print(f'NLL: {nll.item()}, NLP: {nlp.item()}')
             self.last_log = now
 
 
 class GaussianNegativeLogProb(NegativeLogProb):
-    def __init__(self, network, X, y, noise=0.1, log_nll=1.0):
-        super(GaussianNegativeLogProb, self).__init__(log_nll)
+    def __init__(self, network, X, y, noise=0.1, log_frequency=1.0):
+        super(GaussianNegativeLogProb, self).__init__(log_frequency)
 
         self.network = network
         self.X, self.y = X, y
@@ -48,8 +48,8 @@ class MinibatchNegativeLogProb(NegativeLogProb, abc.ABC):
 
 
 class MinibatchGaussianNegativeLogProb(MinibatchNegativeLogProb):
-    def __init__(self, network, dataloader, noise=0.1, log_nll=1.0):
-        super(MinibatchGaussianNegativeLogProb, self).__init__(log_nll)
+    def __init__(self, network, dataloader, noise=0.1, log_frequency=1.0):
+        super(MinibatchGaussianNegativeLogProb, self).__init__(log_frequency)
 
         self.network = network
         self.dataloader = dataloader

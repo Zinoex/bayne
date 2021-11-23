@@ -21,10 +21,10 @@ class ExampleMCDropout(BaseMCDropout):
         self.model = nn.Sequential(
             nn.Dropout(alpha),
             nn.Linear(in_features, 128),
-            nn.SiLU(),
+            nn.Tanh(),
             nn.Dropout(alpha),
             nn.Linear(128, 64),
-            nn.SiLU(),
+            nn.Tanh(),
             nn.Dropout(alpha),
             nn.Linear(64, 1)
         )
@@ -40,7 +40,7 @@ def train(model):
     optimizer = optim.Adam(model.parameters())
 
     dataset = NoisySineDataset()
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=0)
+    dataloader = DataLoader(dataset, batch_size=16, shuffle=True, num_workers=0)
 
     for epoch in trange(num_epochs, desc='Epoch'):
         for X, y in tqdm(dataloader, desc='Iteration'):
