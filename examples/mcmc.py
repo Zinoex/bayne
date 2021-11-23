@@ -1,3 +1,5 @@
+from argparse import ArgumentParser
+
 import torch
 from torch import nn
 from torch.nn import Linear
@@ -31,20 +33,31 @@ class ExampleMonteCarloBNN(nn.Sequential):
         )
 
 
-def train(model):
+def train(model, device):
     dataset = NoisySineDataset()
     dataloader = DataLoader(dataset, batch_size=16, shuffle=True, num_workers=0)
-    negative_log_prob = MinibatchGaussianNegativeLogProb(model, dataloader)
+    negative_log_prob = MinibatchGaussianNegativeLogProb(model, dataloader, device)
 
     model.sample(negative_log_prob, num_samples=1000, reject=20)
 
 
-def main():
-    subnetwork = ExampleMonteCarloBNN(1, 1)
+def main(args):
+    device = torch.device(args.device)
+
+    subnetwork = ExampleMonteCarloBNN(1, 1).to(device)
     model = MonteCarloBNN(subnetwork, sampler=StochasticGradientHMC(step_size=1e-6))
-    train(model)
-    test(model, 'HMC')
+
+    train(model, device)
+    test(model, device, 'HMC')
+
+
+def parse_arguments():
+    parser = ArgumentParser()
+    parser.add_argument('--device', choices=['cuda', 'cpu'], default='cuda', help='Select device for tensor operations')
+
+    return parser.parse_args()
 
 
 if __name__ == '__main__':
-    main()
+    args = parse_arguments()
+    main(args)

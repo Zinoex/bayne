@@ -48,7 +48,7 @@ class MinibatchNegativeLogProb(NegativeLogProb, abc.ABC):
 
 
 class MinibatchGaussianNegativeLogProb(MinibatchNegativeLogProb):
-    def __init__(self, network, dataloader, noise=0.1, log_frequency=1.0):
+    def __init__(self, network, dataloader, device=None, noise=0.1, log_frequency=1.0):
         super(MinibatchGaussianNegativeLogProb, self).__init__(log_frequency)
 
         self.network = network
@@ -56,6 +56,7 @@ class MinibatchGaussianNegativeLogProb(MinibatchNegativeLogProb):
         self.num_batches = len(self.dataloader)
         self.iter = iter(self.dataloader)
         self.noise = noise
+        self.device = device
 
     def __call__(self, *args, **kwargs):
         try:
@@ -63,6 +64,8 @@ class MinibatchGaussianNegativeLogProb(MinibatchNegativeLogProb):
         except StopIteration:
             self.iter = iter(self.dataloader)
             X, y = next(self.iter)
+
+        X, y = X.to(self.device), y.to(self.device)
 
         y_pred = self.network(X)
         dist = distributions.Normal(y, self.noise)

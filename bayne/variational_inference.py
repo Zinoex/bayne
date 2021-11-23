@@ -91,18 +91,18 @@ class BaseVariationalBNN(nn.Sequential):
         _unfreeze(self)
 
     def kl_loss(self):
-        def _kl_loss(module):
+        acc = []
+
+        def collect_kl_loss(module):
             if isinstance(module, VariationalBayesianLayer):
-                return module.kl_loss
-            else:
-                child_kl = [_kl_loss(submodule) for submodule in module.children()]
+                acc.append(module.kl_loss)
 
-                if len(child_kl) > 0:
-                    return torch.stack(child_kl, dim=0).sum(dim=0)
-                else:
-                    return torch.zeros(1)[0]
+            for submodule in module.children():
+                collect_kl_loss(submodule)
 
-        return _kl_loss(self)
+        collect_kl_loss(self)
+
+        return sum(acc)
 
     def zero_kl(self):
         def _zero_kl(module):

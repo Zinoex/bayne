@@ -1,3 +1,6 @@
+from argparse import ArgumentParser
+
+import torch
 from torch import nn, optim, distributions
 from torch.utils.data import DataLoader
 from tqdm import trange, tqdm
@@ -25,7 +28,7 @@ class ExampleVariationalBNN(BaseVariationalBNN):
         )
 
 
-def train(model):
+def train(model, device):
     num_epochs = 1000
     optimizer = optim.Adam(model.parameters(), lr=0.01)
 
@@ -40,6 +43,8 @@ def train(model):
 
     for epoch in trange(num_epochs, desc='Epoch'):
         for idx, (X, y) in enumerate(tqdm(dataloader, desc='Iteration')):
+            X, y = X.to(device), y.to(device)
+
             optimizer.zero_grad(set_to_none=True)
 
             effective_idx = epoch * num_batches + idx
@@ -51,11 +56,21 @@ def train(model):
         print(f'Loss: {loss.item()}')
 
 
-def main():
-    model = ExampleVariationalBNN(1, 1)
-    train(model)
-    test(model, 'VI')
+def main(args):
+    device = torch.device(args.device)
+
+    model = ExampleVariationalBNN(1, 1).to(device)
+    train(model, device)
+    test(model, device, 'VI')
+
+
+def parse_arguments():
+    parser = ArgumentParser()
+    parser.add_argument('--device', choices=['cuda', 'cpu'], default='cuda', help='Select device for tensor operations')
+
+    return parser.parse_args()
 
 
 if __name__ == '__main__':
-    main()
+    args = parse_arguments()
+    main(args)

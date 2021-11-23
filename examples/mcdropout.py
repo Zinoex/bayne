@@ -1,3 +1,6 @@
+from argparse import ArgumentParser
+
+import torch
 from torch import nn, optim, distributions
 from torch.nn import MSELoss
 from torch.utils.data import DataLoader
@@ -15,7 +18,7 @@ from examples.test import test
 
 
 class ExampleMCDropout(BaseMCDropout):
-    def __init__(self, in_features, alpha=0.2):
+    def __init__(self, in_features, out_features, alpha=0.2):
         super().__init__(
             nn.Dropout(alpha),
             nn.Linear(in_features, 128),
@@ -24,11 +27,11 @@ class ExampleMCDropout(BaseMCDropout):
             nn.Linear(128, 64),
             nn.Tanh(),
             nn.Dropout(alpha),
-            nn.Linear(64, 1)
+            nn.Linear(64, out_features)
         )
 
 
-def train(model):
+def train(model, device):
     num_epochs = 1000
     criterion = MSELoss()
     optimizer = optim.Adam(model.parameters())
@@ -38,6 +41,8 @@ def train(model):
 
     for epoch in trange(num_epochs, desc='Epoch'):
         for X, y in tqdm(dataloader, desc='Iteration'):
+            X, y = X.to(device), y.to(device)
+
             optimizer.zero_grad(set_to_none=True)
 
             y_pred = model(X)
@@ -49,11 +54,21 @@ def train(model):
         print(f'Loss: {loss.item()}')
 
 
-def main():
-    model = ExampleMCDropout(1)
-    train(model)
-    test(model, 'MCD')
+def main(args):
+    device = torch.device(args.device)
+
+    model = ExampleMCDropout(1, 1).to(device)
+    train(model, device)
+    test(model, device, 'MCD')
+
+
+def parse_arguments():
+    parser = ArgumentParser()
+    parser.add_argument('--device', choices=['cuda', 'cpu'], default='cuda', help='Select device for tensor operations')
+
+    return parser.parse_args()
 
 
 if __name__ == '__main__':
-    main()
+    args = parse_arguments()
+    main(args)
