@@ -59,10 +59,7 @@ class VariationalLinear(VariationalBayesianLayer):
         return F.linear(x, w, b)
 
 
-class BaseVariationalBNN(nn.Module):
-    def __init__(self):
-        super().__init__()
-
+class BaseVariationalBNN(nn.Sequential):
     def predict_dist(self, *args, num_samples=1, dim=0, **kwargs):
         self.unfreeze()
 

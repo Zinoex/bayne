@@ -1,10 +1,15 @@
+import torch
 from torch import nn
 from torch.nn import Linear
 from torch.utils.data import DataLoader
 
+import matplotlib.pyplot as plt
+
+from bayne.bounds.ibp import SampleIntervalBoundPropagation
 from bayne.mcmc import MonteCarloBNN
 from bayne.nll import GaussianNegativeLogProb, MinibatchGaussianNegativeLogProb
 from bayne.sampler import HamiltonianMonteCarlo, StochasticGradientHMC
+from bayne.util import timer
 from examples.noisy_sine import NoisySineDataset
 from examples.test import test
 

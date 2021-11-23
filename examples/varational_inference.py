@@ -16,18 +16,13 @@ from examples.test import test
 
 class ExampleVariationalBNN(BaseVariationalBNN):
     def __init__(self, in_features, out_features):
-        super().__init__()
-
-        self.model = nn.Sequential(
+        super().__init__(
             VariationalLinear(in_features, 128),
             nn.Tanh(),
             VariationalLinear(128, 64),
             nn.Tanh(),
             VariationalLinear(64, out_features)
         )
-
-    def forward(self, x):
-        return self.model(x)
 
 
 def train(model):

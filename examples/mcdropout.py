@@ -16,9 +16,7 @@ from examples.test import test
 
 class ExampleMCDropout(BaseMCDropout):
     def __init__(self, in_features, alpha=0.2):
-        super().__init__()
-
-        self.model = nn.Sequential(
+        super().__init__(
             nn.Dropout(alpha),
             nn.Linear(in_features, 128),
             nn.Tanh(),
@@ -28,10 +26,6 @@ class ExampleMCDropout(BaseMCDropout):
             nn.Dropout(alpha),
             nn.Linear(64, 1)
         )
-
-    def forward(self, x):
-        self.assert_dropout()
-        return self.model(x)
 
 
 def train(model):

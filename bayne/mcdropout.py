@@ -1,13 +1,22 @@
 import warnings
+from typing import overload, OrderedDict
 
 import torch
 from torch import nn
 from torch.nn.modules.dropout import _DropoutNd
 
 
-class BaseMCDropout(nn.Module):
-    def __init__(self):
-        super().__init__()
+class BaseMCDropout(nn.Sequential):
+    @overload
+    def __init__(self, *args: nn.Module) -> None:
+        ...
+
+    @overload
+    def __init__(self, arg: OrderedDict[str, nn.Module]) -> None:
+        ...
+
+    def __init__(self, *args):
+        super().__init__(*args)
 
         # Train = True ensures that dropout is enabled
         self.train()
@@ -41,4 +50,8 @@ class BaseMCDropout(nn.Module):
         if not mode:
             warnings.warn('Dropout must be enabled to provide uncertainty estimates; even during testing.')
 
-        super(BaseMCDropout, self).train(True)
+        super().train(True)
+
+    def forward(self, x):
+        self.assert_dropout()
+        return super().forward(x)
