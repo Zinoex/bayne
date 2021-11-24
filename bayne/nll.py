@@ -1,5 +1,6 @@
 import abc
 import time
+from typing import Mapping, Sequence
 
 import torch
 from torch import distributions
@@ -65,7 +66,7 @@ class MinibatchGaussianNegativeLogProb(MinibatchNegativeLogProb):
             self.iter = iter(self.dataloader)
             X, y = next(self.iter)
 
-        X, y = X.to(self.device), y.to(self.device)
+        X, y = to_device((X, y), self.device)
 
         y_pred = self.network(X)
         dist = distributions.Normal(y, self.noise)
@@ -83,3 +84,17 @@ class MinibatchGaussianNegativeLogProb(MinibatchNegativeLogProb):
         q0 = self.network.parameters()
 
         return torch.autograd.grad(output, q0)
+
+
+def to_device(elem, device):
+    if isinstance(elem, torch.Tensor):
+        return elem.to(device)
+    elif isinstance(elem, Mapping):
+        return {key: to_device(value, device) for key, value in elem.items()}
+    elif isinstance(elem, tuple) and hasattr(elem, '_fields'):  # namedtuple
+        elem_type = type(elem)
+        return elem_type(*(to_device(samples, device) for samples in elem))
+    elif isinstance(elem, Sequence):
+        return [to_device(samples, device) for samples in elem]
+    else:
+        raise NotImplementedError()
