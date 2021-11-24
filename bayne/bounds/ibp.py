@@ -37,11 +37,14 @@ class SampleIntervalBoundPropagation(Bounds):
 
         for module in model:
             if isinstance(module, (nn.Linear, VariationalLinear)):
-                first = module(lower)
-                second = module(upper)
+                mid = (lower + upper) / 2
+                diff = (upper - lower) / 2
 
-                lower = torch.min(first, second)
-                upper = torch.max(first, second)
+                w_mid = torch.matmul(module.weight, mid.unsqueeze(-1))[..., 0]
+                w_diff = torch.matmul(torch.abs(module.weight), diff.unsqueeze(-1))[..., 0]
+
+                lower = w_mid - w_diff + module.bias
+                upper = w_mid + w_diff + module.bias
             else:
                 lower = module(lower)
                 upper = module(upper)

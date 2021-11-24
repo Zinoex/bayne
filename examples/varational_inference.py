@@ -5,7 +5,6 @@ from torch import nn, optim, distributions
 from torch.utils.data import DataLoader
 from tqdm import trange, tqdm
 
-from bayne.util import set_random_seed
 from bayne.variational_inference import BaseVariationalBNN, VariationalLinear
 from examples.noisy_sine import NoisySineDataset
 from examples.test import test

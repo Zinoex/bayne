@@ -112,19 +112,7 @@ class ParameterQueue(nn.Module):
         if kwargs is None:
             kwargs = {}
 
-        def convert_arg(arg):
-            if not isinstance(arg, ParameterQueue):
-                return arg
-
-            if arg.active_index is None:
-                return arg.cur
-
-            if 0 <= arg.active_index < len(self):
-                return arg.deque[arg.active_index]
-
-            raise ValueError('Active index out of bounds')
-
-        args = list(map(convert_arg, args))
+        args = list(map(self.active_weight, args))
         return func(*args, **kwargs)
 
     def active_weights(self):
@@ -145,3 +133,20 @@ class ParameterQueue(nn.Module):
 
     def uniform_(self, lower, upper):
         self.cur.uniform_(lower, upper)
+
+    def unsqueeze(self, dim):
+        active = self.active_weight(self)
+        return active.unsqueeze(dim)
+
+    @staticmethod
+    def active_weight(arg):
+        if not isinstance(arg, ParameterQueue):
+            return arg
+
+        if arg.active_index is None:
+            return arg.cur
+
+        if 0 <= arg.active_index < len(arg):
+            return arg.deque[arg.active_index]
+
+        raise ValueError('Active index out of bounds')

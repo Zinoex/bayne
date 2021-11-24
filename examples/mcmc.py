@@ -5,13 +5,9 @@ from torch import nn
 from torch.nn import Linear
 from torch.utils.data import DataLoader
 
-import matplotlib.pyplot as plt
-
-from bayne.bounds.ibp import SampleIntervalBoundPropagation
 from bayne.mcmc import MonteCarloBNN
-from bayne.nll import GaussianNegativeLogProb, MinibatchGaussianNegativeLogProb
-from bayne.sampler import HamiltonianMonteCarlo, StochasticGradientHMC
-from bayne.util import timer
+from bayne.nll import MinibatchGaussianNegativeLogProb
+from bayne.sampler import StochasticGradientHMC
 from examples.noisy_sine import NoisySineDataset
 from examples.test import test
 
@@ -45,7 +41,7 @@ def main(args):
     device = torch.device(args.device)
 
     subnetwork = ExampleMonteCarloBNN(1, 1).to(device)
-    model = MonteCarloBNN(subnetwork, sampler=StochasticGradientHMC(step_size=1e-6))
+    model = MonteCarloBNN(subnetwork, sampler=StochasticGradientHMC(step_size=5e-3, momentum_decay=0.1, grad_noise=0.01))
 
     train(model, device)
     test(model, device, 'HMC')

@@ -4,29 +4,40 @@ from torch.nn import MSELoss
 from torch.utils.data import DataLoader
 from torch import nn
 
-from bayne.bounds.ibp import SampleIntervalBoundPropagation
+from bayne.bounds import CROWNIntervalBoundPropagation, SampleIntervalBoundPropagation
 from bayne.util import timer
 from examples.noisy_sine import NoisySineDataset
 
 
 @torch.no_grad()
 def plot_bounds(model, device):
-    ibp = SampleIntervalBoundPropagation()
     num_slices = 100
     boundaries = torch.linspace(-2, 2, num_slices + 1).view(-1, 1).to(device)
     input_bounds = boundaries[:-1], boundaries[1:]
     sequential_network = model if isinstance(model, nn.Sequential) else model.network
-    output_bounds = timer(ibp.interval_bounds)(sequential_network, input_bounds)
+
+    ibp = SampleIntervalBoundPropagation()
+    interval_output_bounds = timer(ibp.interval_bounds)(sequential_network, input_bounds)
+
+    crown = CROWNIntervalBoundPropagation()
+    linear_output_bounds = timer(crown.linear_bounds)(sequential_network, input_bounds)
 
     input_bounds = input_bounds[0].cpu(), input_bounds[1].cpu()
-    output_bounds = output_bounds[0].cpu(), output_bounds[1].cpu()
+    interval_output_bounds = interval_output_bounds[0].cpu(), interval_output_bounds[1].cpu()
+    linear_output_bounds = (linear_output_bounds[0][0].cpu(), linear_output_bounds[0][1].cpu()), (linear_output_bounds[1][0].cpu(), linear_output_bounds[1][1].cpu())
 
     for i in range(num_slices):
         x1, x2 = input_bounds[0][i], input_bounds[1][i]
-        y1, y2 = output_bounds[0][i], output_bounds[1][i]
+        y1, y2 = interval_output_bounds[0][i], interval_output_bounds[1][i]
 
         plt.plot([x1, x2], [y1, y1], color='blue', linestyle='dashed', label='IBP' if i == 0 else None)
         plt.plot([x1, x2], [y2, y2], color='blue', linestyle='dashed')
+
+        y1, y2 = linear_output_bounds[0][0][i, 0, 0] * x1 + linear_output_bounds[0][1][i, 0], linear_output_bounds[0][0][i, 0, 0] * x2 + linear_output_bounds[0][1][i, 0]
+        y3, y4 = linear_output_bounds[1][0][i, 0, 0] * x1 + linear_output_bounds[1][1][i, 0], linear_output_bounds[1][0][i, 0, 0] * x2 + linear_output_bounds[1][1][i, 0]
+
+        plt.plot([x1, x2], [y1, y2], color='green', linestyle='dashed', label='CROWN-IBP' if i == 0 else None)
+        plt.plot([x1, x2], [y3, y4], color='green', linestyle='dashed')
 
 
 @torch.no_grad()

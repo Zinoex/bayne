@@ -79,7 +79,7 @@ class HamiltonianMonteCarlo(dVdqMixin):
         # Check Metropolis acceptance criterion
         new_log_p = negative_log_prob() + self.kinetic_energy(p_new)
 
-        acceptance_probability = np.exp(start_log_p - new_log_p)
+        acceptance_probability = torch.exp(start_log_p - new_log_p).item()
         accept = np.random.rand() < acceptance_probability
 
         if not accept:
@@ -151,15 +151,15 @@ class StochasticGradientHMC(dVdqMixin):
         """
 
         # Sample initial momentum
-        v = TensorList.zeroes_like(q)
-        v.normal_(0, math.sqrt(self.step_size))
-        sigma = torch.sqrt(torch.tensor(2 * (self.momentum_decay - self.grad_noise) * self.step_size))
+        p = TensorList.zeroes_like(q)
+        p.normal_(0, 1)
+        sigma = torch.tensor(2 * (self.momentum_decay - self.grad_noise) * self.step_size)
 
         for step in range(self.num_steps):
-            q += v
+            q.step(p, self.step_size)
 
             grad = dVdq()
-            v.sg_hmc_momentum_update(grad, self.step_size, 1 - self.momentum_decay, sigma)
+            p.sg_hmc_momentum_update(grad, self.step_size, 1 - self.momentum_decay * self.step_size, sigma)
 
 
 @torch.jit.script
@@ -235,17 +235,19 @@ class CyclicalStochasticGradientHMC(dVdqMixin):
         the parameters space directly on this network (using pass by reference).
         Therefore, we assume it is a parameterless function.
         """
-        v = TensorList.zeroes_like(q)
+        p = TensorList.zeroes_like(q)
 
         step_sizes = self.step_sizes(it, steps_per_cycle)
-        sigmas = torch.sqrt(2 * (self.momentum_decay - self.grad_noise) * step_sizes)
+        sigmas = 2 * (self.momentum_decay - self.grad_noise) * step_sizes
 
         # Sample initial momentum
-        v.normal_(0, math.sqrt(step_sizes[0]))
+        p.normal_(0, 1)
 
         for step_size, sigma in zip(step_sizes.tolist(), sigmas.tolist()):
-            q += v
-            v.sg_hmc_momentum_update(dVdq(), step_size, 1 - self.momentum_decay, sigma)
+            q.step(p, step_size)
+
+            grad = dVdq()
+            p.sg_hmc_momentum_update(grad, step_size, 1 - self.momentum_decay * step_size, sigma)
 
 
 class CyclicalStochasticGradientLD(dVdqMixin):

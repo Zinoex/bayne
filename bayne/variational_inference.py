@@ -58,6 +58,14 @@ class VariationalLinear(VariationalBayesianLayer):
 
         return F.linear(x, w, b)
 
+    @property
+    def weight(self):
+        return self.weight_posterior.sample()
+
+    @property
+    def bias(self):
+        return self.bias_posterior.sample()
+
 
 class BaseVariationalBNN(nn.Sequential):
     def predict_dist(self, *args, num_samples=1, dim=0, **kwargs):
