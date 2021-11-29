@@ -37,7 +37,7 @@ def train(model, device):
     optimizer = optim.Adam(model.parameters())
 
     dataset = NoisySineDataset()
-    dataloader = DataLoader(dataset, batch_size=16, shuffle=True, num_workers=0)
+    dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=0)
 
     for epoch in trange(num_epochs, desc='Epoch'):
         for X, y in tqdm(dataloader, desc='Iteration'):

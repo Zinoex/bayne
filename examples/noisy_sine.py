@@ -9,8 +9,8 @@ def f(x, sigma):
     return torch.sin(2 * np.pi * x) + epsilon
 
 
-train_size = 64
-noise = 0.05
+train_size = 256
+noise = 0.3
 
 X = torch.linspace(-1.0, 1.0, train_size, dtype=torch.float32).view(-1, 1)
 y = f(X, sigma=noise)

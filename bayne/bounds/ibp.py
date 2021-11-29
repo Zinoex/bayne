@@ -43,8 +43,12 @@ class SampleIntervalBoundPropagation(Bounds):
                 w_mid = torch.matmul(module.weight, mid.unsqueeze(-1))[..., 0]
                 w_diff = torch.matmul(torch.abs(module.weight), diff.unsqueeze(-1))[..., 0]
 
-                lower = w_mid - w_diff + module.bias
-                upper = w_mid + w_diff + module.bias
+                lower = w_mid - w_diff
+                upper = w_mid + w_diff
+
+                if module.bias:
+                    lower += module.bias
+                    upper += module.bias
             else:
                 lower = module(lower)
                 upper = module(upper)

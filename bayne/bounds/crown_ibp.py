@@ -95,20 +95,20 @@ class CROWNIntervalBoundPropagation(Bounds):
         return alpha_lower_k, alpha_upper_k, beta_lower_k, beta_upper_k
 
     def compute_alpha_beta_sigmoid(self, LB, UB, n, p, np):
-        def derivative(x):
-            s = torch.sigmoid(x)
-            return s - s ** 2
-
-        return self.compute_alpha_beta_general(LB, UB, n, p, np, torch.sigmoid, derivative)
+        return self.compute_alpha_beta_general(LB, UB, n, p, np, torch.sigmoid)
 
     def compute_alpha_beta_tanh(self, LB, UB, n, p, np):
-        def derivative(x):
-            s = torch.tanh(x)
-            return 1 - s ** 2
+        return self.compute_alpha_beta_general(LB, UB, n, p, np, torch.tanh)
 
-        return self.compute_alpha_beta_general(LB, UB, n, p, np, torch.tanh, derivative)
+    def compute_alpha_beta_general(self, LB, UB, n, p, np, func):
+        @torch.enable_grad()
+        def derivative(d):
+            d.requires_grad_()
+            y = func(d)
+            y.backward(torch.ones_like(d))
 
-    def compute_alpha_beta_general(self, LB, UB, n, p, np, func, derivative):
+            return d.grad
+
         alpha_lower_k = torch.zeros_like(LB)
         alpha_upper_k = torch.zeros_like(LB)
         beta_lower_k = torch.zeros_like(LB)
@@ -126,12 +126,12 @@ class CROWNIntervalBoundPropagation(Bounds):
         alpha_lower_k[n] = d_prime[n]
         alpha_upper_k[n] = concave_slope[n]
         beta_lower_k[n] = d_act[n] - alpha_lower_k[n] * d[n]
-        beta_upper_k[n] = LB_act[n] - LB[n] * alpha_upper_k[n]
+        beta_upper_k[n] = LB_act[n] - alpha_upper_k[n] * LB[n]
 
         # Positive regime
         alpha_lower_k[p] = concave_slope[p]
         alpha_upper_k[p] = d_prime[p]
-        beta_lower_k[p] = UB_act[p] - UB[p] * alpha_lower_k[p]
+        beta_lower_k[p] = UB_act[p] - alpha_lower_k[p] * UB[p]
         beta_upper_k[p] = d_act[p] - alpha_upper_k[p] * d[p]
 
         # Crossing zero
@@ -148,8 +148,8 @@ class CROWNIntervalBoundPropagation(Bounds):
 
         alpha_lower_k[np] = torch.where(d_lower <= LB_np, concave_slope[np], derivative(d_lower))
         alpha_upper_k[np] = torch.where(d_upper >= UB_np, concave_slope[np], derivative(d_upper))
-        beta_lower_k[np] = UB_act[np] / alpha_lower_k[np] - UB_np
-        beta_upper_k[np] = LB_act[np] / alpha_upper_k[np] - LB_np
+        beta_lower_k[np] = UB_act[np] - alpha_lower_k[np] * UB_np
+        beta_upper_k[np] = LB_act[np] - alpha_upper_k[np] * LB_np
 
         return alpha_lower_k, alpha_upper_k, beta_lower_k, beta_upper_k
 
@@ -179,7 +179,7 @@ class CROWNIntervalBoundPropagation(Bounds):
 
         for k, module in reversed(list(zip(range(1, num_linear + 1), linear_modules))):
             if isinstance(module, nn.Linear):
-                bias_k = module.bias.unsqueeze(-1)
+                bias_k = module.bias.unsqueeze(-1) if module.bias else 0
 
                 # Lower bound
                 theta_k = self._theta(k, num_linear, Omega_weight, beta).to(device)

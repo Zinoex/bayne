@@ -32,7 +32,7 @@ def train(model, device):
     optimizer = optim.Adam(model.parameters(), lr=0.01)
 
     dataset = NoisySineDataset()
-    dataloader = DataLoader(dataset, batch_size=16, shuffle=True, num_workers=0)
+    dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=0)
 
     num_batches = len(dataloader)
 
@@ -47,7 +47,7 @@ def train(model, device):
             optimizer.zero_grad(set_to_none=True)
 
             effective_idx = epoch * num_batches + idx
-            loss = model.sample_elbo(effective_idx, X, y, criterion, num_samples=3, num_batches=num_batches)
+            loss = model.sample_elbo(effective_idx, X, y, criterion, num_samples=20, num_batches=num_batches)
             loss.backward()
 
             optimizer.step()
