@@ -49,7 +49,7 @@ def plot_bounds(model, device):
     y = model(X)
     X, y = X.cpu().numpy(), y.cpu().numpy()
 
-    plt.plot(X, y, color='indigo')
+    plt.plot(X, y, color='blueviolet', label='Function to bound')
 
 
 @torch.no_grad()

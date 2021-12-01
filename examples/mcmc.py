@@ -44,7 +44,7 @@ def main(args):
     device = torch.device(args.device)
 
     subnetwork = ExampleMonteCarloBNN(1, 1).to(device)
-    model = MonteCarloBNN(subnetwork, sampler=CyclicalStochasticGradientHMC(initial_step_size=8e-5, momentum_decay=0.05, grad_noise=0.01, num_steps=50))
+    model = MonteCarloBNN(subnetwork, sampler=CyclicalStochasticGradientHMC(initial_step_size=5e-5, momentum_decay=0.05, grad_noise=0.01, num_steps=50))
 
     train(model, device)
     test(model, device, 'HMC')

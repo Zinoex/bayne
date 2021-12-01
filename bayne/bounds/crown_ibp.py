@@ -81,16 +81,18 @@ class CROWNIntervalBoundPropagation(Bounds):
         beta_lower_k[positive_regime] = 0
         beta_upper_k[positive_regime] = 0
 
+        LB, UB = LB[cross_regime], UB[cross_regime]
+
+        z = UB / (UB - LB)
         if self.adaptive_relu:
-            LB, UB = LB[cross_regime], UB[cross_regime]
-            a = UB / (UB - LB)
+            a = (UB >= torch.abs(LB)).to(torch.float)
         else:
-            a = (UB[cross_regime] >= torch.abs(LB[cross_regime])).to(torch.float)
+            a = z
 
         alpha_lower_k[cross_regime] = a
-        alpha_upper_k[cross_regime] = a
+        alpha_upper_k[cross_regime] = z
         beta_lower_k[cross_regime] = 0
-        beta_upper_k[cross_regime] = -LB[cross_regime]
+        beta_upper_k[cross_regime] = -LB * z
 
         return alpha_lower_k, alpha_upper_k, beta_lower_k, beta_upper_k
 
@@ -126,12 +128,12 @@ class CROWNIntervalBoundPropagation(Bounds):
         alpha_lower_k[n] = d_prime[n]
         alpha_upper_k[n] = concave_slope[n]
         beta_lower_k[n] = d_act[n] - alpha_lower_k[n] * d[n]
-        beta_upper_k[n] = LB_act[n] - alpha_upper_k[n] * LB[n]
+        beta_upper_k[n] = UB_act[n] - alpha_upper_k[n] * UB[n]
 
         # Positive regime
         alpha_lower_k[p] = concave_slope[p]
         alpha_upper_k[p] = d_prime[p]
-        beta_lower_k[p] = UB_act[p] - alpha_lower_k[p] * UB[p]
+        beta_lower_k[p] = LB_act[p] - alpha_lower_k[p] * LB[p]
         beta_upper_k[p] = d_act[p] - alpha_upper_k[p] * d[p]
 
         # Crossing zero
@@ -143,8 +145,8 @@ class CROWNIntervalBoundPropagation(Bounds):
         def f_upper(d):
             return (func(d) - func(LB_np)) / (d - LB_np) - derivative(d)
 
-        d_lower = self.bisection(torch.zeros_like(LB_np) - 100, torch.zeros_like(LB_np), f_lower)
-        d_upper = self.bisection(torch.zeros_like(UB_np), torch.zeros_like(UB_np) + 100, f_upper)
+        d_lower = self.bisection(LB_np, torch.zeros_like(LB_np), f_lower)
+        d_upper = self.bisection(torch.zeros_like(UB_np), UB_np, f_upper)
 
         alpha_lower_k[np] = torch.where(d_lower <= LB_np, concave_slope[np], derivative(d_lower))
         alpha_upper_k[np] = torch.where(d_upper >= UB_np, concave_slope[np], derivative(d_upper))
@@ -153,7 +155,7 @@ class CROWNIntervalBoundPropagation(Bounds):
 
         return alpha_lower_k, alpha_upper_k, beta_lower_k, beta_upper_k
 
-    def bisection(self, l: torch.Tensor, h: torch.Tensor, f: Callable[[torch.Tensor], torch.Tensor], num_iter=20) -> torch.Tensor:
+    def bisection(self, l: torch.Tensor, h: torch.Tensor, f: Callable[[torch.Tensor], torch.Tensor], num_iter=50) -> torch.Tensor:
         midpoint = (l + h) / 2
 
         for _ in range(num_iter):
@@ -161,13 +163,15 @@ class CROWNIntervalBoundPropagation(Bounds):
             l[y > 0] = midpoint[y > 0]
             h[y <= 0] = midpoint[y <= 0]
 
+            midpoint = (l + h) / 2
+
         return midpoint
 
     def compute_linear_bounds(self, model, alpha, beta):
         output_size = model[-1].weight.size(0)
         linear_modules = [module for module in model if isinstance(module, nn.Linear)]
         num_linear = len(linear_modules)
-        device = beta[0][0].device
+        device = linear_modules[0].weight.device
 
         Omega_k = torch.eye(output_size, device=device).unsqueeze(0)
         Omega_weight = None
@@ -179,7 +183,7 @@ class CROWNIntervalBoundPropagation(Bounds):
 
         for k, module in reversed(list(zip(range(1, num_linear + 1), linear_modules))):
             if isinstance(module, nn.Linear):
-                bias_k = module.bias.unsqueeze(-1) if module.bias else 0
+                bias_k = module.bias.unsqueeze(-1) if module.bias else torch.zeros((1, 1), device=device)
 
                 # Lower bound
                 theta_k = self._theta(k, num_linear, Omega_weight, beta).to(device)
@@ -203,23 +207,25 @@ class CROWNIntervalBoundPropagation(Bounds):
 
     def _delta(self, k, m, gamma_weight, beta):
         if k == m:
+            # No beta for the last layer
             return torch.tensor([0])
         else:
-            # No beta for the last layer + zero-indexing
+            # Zero-indexing
             return torch.where(gamma_weight.transpose(-1, -2) < 0, beta[0][k - 1].unsqueeze(-1), beta[1][k - 1].unsqueeze(-1))
 
     def _lambda(self, k, gamma_weight, alpha):
         if k == 0:
             return torch.tensor([1])
         else:
-            # No alpha for the last layer + zero-indexing
+            # Zero-indexing
             return torch.where(gamma_weight < 0, alpha[0][k - 1].unsqueeze(-2), alpha[1][k - 1].unsqueeze(-2))
 
     def _theta(self, k, m, omega_weight, beta):
         if k == m:
+            # No beta for the last layer
             return torch.tensor([0])
         else:
-            # No beta for the last layer + zero-indexing
+            # Zero-indexing
             return torch.where(omega_weight.transpose(-1, -2) < 0, beta[1][k - 1].unsqueeze(-1), beta[0][k - 1].unsqueeze(-1))
 
     def _omega(self, k, omega_weight, alpha):

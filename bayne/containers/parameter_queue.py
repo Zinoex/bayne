@@ -125,6 +125,10 @@ class ParameterQueue(nn.Module):
     def shape(self):
         return self.cur.shape
 
+    @property
+    def device(self):
+        return self.cur.device
+
     def dim(self):
         return self.cur.dim()
 
