@@ -11,6 +11,27 @@ from bayne.sampler import HamiltonianMonteCarlo
 from bayne.util import ResetableModule
 
 
+class UseState:
+    def __init__(self, network, state_idx, max_len=None):
+        self.network = network
+        self.state_idx = state_idx
+        self.max_len = max_len
+
+    def __enter__(self):
+        def _set_maxlen_and_active_index(m):
+            if isinstance(m, ParameterQueue):
+                if self.max_len is not None:
+                    m.maxlen = self.max_len
+                m.active_index = self.state_idx
+        self.network.apply(_set_maxlen_and_active_index)
+
+    def __exit__(self, type, value, traceback):
+        def _clear_active_index(m):
+            if isinstance(m, ParameterQueue):
+                m.active_index = None
+        self.network.apply(_clear_active_index)
+
+
 class MonteCarloBNN(nn.Module, ResetableModule):
     def __init__(self, network, sampler=HamiltonianMonteCarlo(step_size=1e-4, num_steps=50)):
         super().__init__()
@@ -27,22 +48,13 @@ class MonteCarloBNN(nn.Module, ResetableModule):
         self.apply(_replace_parameter)
 
     def sample(self, negative_log_prob, num_samples=200, reject=200, progress_bar=True):
-        def _set_maxlen_and_active_index(m):
-            if isinstance(m, ParameterQueue):
-                m.maxlen = num_samples
-                m.active_index = None
-        self.apply(_set_maxlen_and_active_index)
-
-        self.sampler.sample(self, negative_log_prob, num_samples, reject, progress_bar)
-        self.num_states = num_samples
+        with UseState(self.network, None, max_len=num_samples):
+            self.sampler.sample(self, negative_log_prob, num_samples, reject, progress_bar)
+            self.num_states = num_samples
 
     def forward(self, *args, state_idx=None, **kwargs):
-        def _set_active_index(m):
-            if isinstance(m, ParameterQueue):
-                m.active_index = state_idx
-        self.apply(_set_active_index)
-
-        return self.network(*args, **kwargs)
+        with UseState(self.network, state_idx):
+            return self.network(*args, **kwargs)
 
     def predict_dist(self, *args, num_samples=None, dim=0, **kwargs):
         preds = [self(*args, **kwargs, state_idx=idx) for idx in range(self.num_states)]

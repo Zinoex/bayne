@@ -140,7 +140,7 @@ class CROWNIntervalBoundPropagation(Bounds):
         LB_np, UB_np = LB[np], UB[np]
 
         def f_lower(d):
-            return (func(UB_np) - func(d)) / (UB_np - d) - derivative(d)
+            return derivative(d) - (func(UB_np) - func(d)) / (UB_np - d)
 
         def f_upper(d):
             return (func(d) - func(LB_np)) / (d - LB_np) - derivative(d)
@@ -148,22 +148,23 @@ class CROWNIntervalBoundPropagation(Bounds):
         d_lower = self.bisection(LB_np, torch.zeros_like(LB_np), f_lower)
         d_upper = self.bisection(torch.zeros_like(UB_np), UB_np, f_upper)
 
-        alpha_lower_k[np] = torch.where(d_lower <= LB_np, concave_slope[np], derivative(d_lower))
-        alpha_upper_k[np] = torch.where(d_upper >= UB_np, concave_slope[np], derivative(d_upper))
+        alpha_lower_k[np] = derivative(d_lower)
+        alpha_upper_k[np] = derivative(d_upper)
         beta_lower_k[np] = UB_act[np] - alpha_lower_k[np] * UB_np
         beta_upper_k[np] = LB_act[np] - alpha_upper_k[np] * LB_np
 
         return alpha_lower_k, alpha_upper_k, beta_lower_k, beta_upper_k
 
-    def bisection(self, l: torch.Tensor, h: torch.Tensor, f: Callable[[torch.Tensor], torch.Tensor], num_iter=50) -> torch.Tensor:
+    def bisection(self, l: torch.Tensor, h: torch.Tensor, f: Callable[[torch.Tensor], torch.Tensor], num_iter=10) -> torch.Tensor:
         midpoint = (l + h) / 2
+        y = f(midpoint)
 
         for _ in range(num_iter):
-            y = f(midpoint)
-            l[y > 0] = midpoint[y > 0]
-            h[y <= 0] = midpoint[y <= 0]
+            l[y <= 0] = midpoint[y <= 0]
+            h[y > 0] = midpoint[y > 0]
 
             midpoint = (l + h) / 2
+            y = f(midpoint)
 
         return midpoint
 
@@ -183,54 +184,63 @@ class CROWNIntervalBoundPropagation(Bounds):
 
         for k, module in reversed(list(zip(range(1, num_linear + 1), linear_modules))):
             if isinstance(module, nn.Linear):
-                bias_k = module.bias.unsqueeze(-1) if module.bias else torch.zeros((1, 1), device=device)
+                bias_k = module.bias if module.bias else torch.zeros((1,), device=device)
+                weight_k = module.weight.unsqueeze(0)
 
                 # Lower bound
-                theta_k = self._theta(k, num_linear, Omega_weight, beta).to(device)
-                bias_theta_k = (bias_k + theta_k).transpose(-1, -2)
-                Omega_accumulator = Omega_accumulator + (Omega_k * bias_theta_k).sum(dim=-1)
+                # theta_k = self._theta(k, num_linear, Omega_weight, beta, device)
+                # bias_theta_k = bias_k + theta_k
+                # Omega_accumulator = Omega_accumulator + (Omega_k * bias_theta_k).sum(dim=-1)
+                Omega_accumulator = Omega_accumulator + torch.matmul(Omega_k, bias_k)
+                if k < num_linear:
+                    theta_k = self._theta(k, num_linear, Omega_weight, beta, device)
+                    Omega_accumulator += (Omega_weight * theta_k).sum(dim=-1)
 
-                Omega_weight = torch.matmul(Omega_k, module.weight)
-                omega_k = self._omega(k - 1, Omega_weight, alpha).to(device)
+                Omega_weight = torch.matmul(Omega_k, weight_k)
+                omega_k = self._omega(k - 1, Omega_weight, alpha, device)
                 Omega_k = Omega_weight * omega_k
 
                 # Upper bound
-                delta_k = self._delta(k, num_linear, Gamma_weight, beta).to(device)
-                bias_delta_k = (bias_k + delta_k).transpose(-1, -2)
-                Gamma_accumulator = Gamma_accumulator + (Gamma_k * bias_delta_k).sum(dim=-1)
+                # delta_k = self._delta(k, num_linear, Gamma_weight, beta, device)
+                # bias_delta_k = bias_k + delta_k
+                # Gamma_accumulator = Gamma_accumulator + (Gamma_k * bias_delta_k).sum(dim=-1)
+                Gamma_accumulator = Gamma_accumulator + torch.matmul(Gamma_k, bias_k)
+                if k < num_linear:
+                    delta_k = self._delta(k, num_linear, Gamma_weight, beta, device)
+                    Gamma_accumulator += (Gamma_weight * delta_k).sum(dim=-1)
 
-                Gamma_weight = torch.matmul(Gamma_k, module.weight)
-                lambda_k = self._lambda(k - 1, Gamma_weight, alpha).to(device)
+                Gamma_weight = torch.matmul(Gamma_k, weight_k)
+                lambda_k = self._lambda(k - 1, Gamma_weight, alpha, device)
                 Gamma_k = Gamma_weight * lambda_k
 
         return (Omega_k, Omega_accumulator), (Gamma_k, Gamma_accumulator)
 
-    def _delta(self, k, m, gamma_weight, beta):
+    def _delta(self, k, m, gamma_weight, beta, device):
         if k == m:
             # No beta for the last layer
-            return torch.tensor([0])
+            return torch.tensor([0], device=device)
         else:
             # Zero-indexing
-            return torch.where(gamma_weight.transpose(-1, -2) < 0, beta[0][k - 1].unsqueeze(-1), beta[1][k - 1].unsqueeze(-1))
+            return torch.where(gamma_weight < 0, beta[0][k - 1].unsqueeze(-2), beta[1][k - 1].unsqueeze(-2))
 
-    def _lambda(self, k, gamma_weight, alpha):
+    def _lambda(self, k, gamma_weight, alpha, device):
         if k == 0:
-            return torch.tensor([1])
+            return torch.tensor([1], device=device)
         else:
             # Zero-indexing
             return torch.where(gamma_weight < 0, alpha[0][k - 1].unsqueeze(-2), alpha[1][k - 1].unsqueeze(-2))
 
-    def _theta(self, k, m, omega_weight, beta):
+    def _theta(self, k, m, omega_weight, beta, device):
         if k == m:
             # No beta for the last layer
-            return torch.tensor([0])
+            return torch.tensor([0], device=device)
         else:
             # Zero-indexing
-            return torch.where(omega_weight.transpose(-1, -2) < 0, beta[1][k - 1].unsqueeze(-1), beta[0][k - 1].unsqueeze(-1))
+            return torch.where(omega_weight < 0, beta[1][k - 1].unsqueeze(-2), beta[0][k - 1].unsqueeze(-2))
 
-    def _omega(self, k, omega_weight, alpha):
+    def _omega(self, k, omega_weight, alpha, device):
         if k == 0:
-            return torch.tensor([1])
+            return torch.tensor([1], device=device)
         else:
             # No alpha for the last layer + zero-indexing
             return torch.where(omega_weight < 0, alpha[1][k - 1].unsqueeze(-2), alpha[0][k - 1].unsqueeze(-2))

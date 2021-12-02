@@ -21,15 +21,15 @@ from examples.test import test
 class ExampleMonteCarloBNN(nn.Sequential):
     def __init__(self, in_features, out_features):
         super().__init__(
-            Linear(in_features, 8),
-            nn.Tanh(),
-            Linear(8, 8),
-            nn.Tanh(),
-            Linear(8, out_features)
+            Linear(in_features, 64),
+            nn.ReLU(),
+            Linear(64, 64),
+            nn.ReLU(),
+            Linear(64, out_features)
         )
 
-        nn.init.xavier_normal_(self[0].weight)
-        nn.init.xavier_normal_(self[2].weight)
+        # nn.init.xavier_normal_(self[0].weight)
+        # nn.init.xavier_normal_(self[2].weight)
 
 
 def train(model, device):
@@ -44,7 +44,7 @@ def main(args):
     device = torch.device(args.device)
 
     subnetwork = ExampleMonteCarloBNN(1, 1).to(device)
-    model = MonteCarloBNN(subnetwork, sampler=CyclicalStochasticGradientHMC(initial_step_size=5e-5, momentum_decay=0.05, grad_noise=0.01, num_steps=50))
+    model = MonteCarloBNN(subnetwork, sampler=StochasticGradientHMC(step_size=5e-3, momentum_decay=0.05, grad_noise=0.01, num_steps=50))
 
     train(model, device)
     test(model, device, 'HMC')

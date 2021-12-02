@@ -142,6 +142,10 @@ class ParameterQueue(nn.Module):
         active = self.active_weight(self)
         return active.unsqueeze(dim)
 
+    def view(self, *args):
+        active = self.active_weight(self)
+        return active.view(*args)
+
     @staticmethod
     def active_weight(arg):
         if not isinstance(arg, ParameterQueue):

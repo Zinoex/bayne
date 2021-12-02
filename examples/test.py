@@ -73,12 +73,12 @@ def test(model, device, label):
     X_test, y_dist = X_test[..., 0].cpu().numpy(), y_dist[..., 0].cpu()
 
     y_mean = y_dist.mean(0).numpy()
-    y_std = y_dist.var(0).numpy()
+    y_std = y_dist.std(0).numpy()
 
     plt.ylim(-4, 4)
 
     plt.plot(X_test, y_mean, 'r-', label='Predictive mean')
-    plt.scatter(X_train.numpy(), y_train.numpy(), marker='+', label='Training data')
+    # plt.scatter(X_train.numpy(), y_train.numpy(), marker='+', label='Training data')
     plt.fill_between(X_test.ravel(), y_mean + y_std * 3, y_mean - y_std * 3, alpha=0.5, label='Epistemic Uncertainty')
 
     plot_bounds(model, device)
