@@ -10,7 +10,7 @@ def f(x, sigma):
 
 
 train_size = 256
-noise = 0.3
+noise = 0.2
 
 X = torch.linspace(-1.0, 1.0, train_size, dtype=torch.float32).view(-1, 1)
 y = f(X, sigma=noise)

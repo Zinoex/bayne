@@ -68,7 +68,7 @@ def test(model, device, label):
 
     print(f'Average MSE: {avg_loss.item()}')
 
-    X_test = torch.linspace(-2.0, 2.0, 10000).view(-1, 1).to(device)
+    X_test = torch.linspace(-2.0, 2.0, 1000).view(-1, 1).to(device)
     y_dist = timer(model.predict_dist)(X_test, num_samples=num_samples)
     X_test, y_dist = X_test[..., 0].cpu().numpy(), y_dist[..., 0].cpu()
 

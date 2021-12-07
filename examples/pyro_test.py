@@ -37,8 +37,6 @@ class BNN(nn.Sequential, PyroModule):
             PyroModule[nn.Tanh](),
             PyroModule[PyroBatchLinear](16, 16),
             PyroModule[nn.Tanh](),
-            PyroModule[PyroBatchLinear](16, 16),
-            PyroModule[nn.Tanh](),
             PyroModule[PyroBatchLinear](16, out_features),
         )
 
@@ -50,8 +48,8 @@ class BNN(nn.Sequential, PyroModule):
 
         self.sigma = sigma
 
-        self.hmc_kernel = HMC(self, step_size=1e-6, num_steps=10, jit_compile=True, ignore_jit_warnings=True)
-        self.mcmc = MCMC(self.hmc_kernel, num_samples=3000, warmup_steps=1000)
+        self.hmc_kernel = HMC(self, step_size=1e-6, num_steps=50, jit_compile=True, ignore_jit_warnings=True)
+        self.mcmc = MCMC(self.hmc_kernel, num_samples=3000, warmup_steps=500)
 
     def forward(self, X, y=None):
         mean = super().forward(X)
