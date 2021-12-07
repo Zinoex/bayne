@@ -8,6 +8,7 @@ matplotlib
 seaborn
 scikit-learn
 torch
+pyro-ppl
 PyHamcrest
 bs4
 flask

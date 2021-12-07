@@ -68,8 +68,8 @@ def test(model, device, label):
 
     print(f'Average MSE: {avg_loss.item()}')
 
-    X_test = torch.linspace(-2.0, 2.0, 1000).view(-1, 1).to(device)
-    y_dist = model.predict_dist(X_test, num_samples=num_samples)
+    X_test = torch.linspace(-2.0, 2.0, 10000).view(-1, 1).to(device)
+    y_dist = timer(model.predict_dist)(X_test, num_samples=num_samples)
     X_test, y_dist = X_test[..., 0].cpu().numpy(), y_dist[..., 0].cpu()
 
     y_mean = y_dist.mean(0).numpy()
@@ -78,10 +78,10 @@ def test(model, device, label):
     plt.ylim(-4, 4)
 
     plt.plot(X_test, y_mean, 'r-', label='Predictive mean')
-    # plt.scatter(X_train.numpy(), y_train.numpy(), marker='+', label='Training data')
+    plt.scatter(X_train.numpy(), y_train.numpy(), marker='+', label='Training data')
     plt.fill_between(X_test.ravel(), y_mean + y_std * 3, y_mean - y_std * 3, alpha=0.5, label='Epistemic Uncertainty')
 
-    plot_bounds(model, device)
+    # plot_bounds(model, device)
 
     plt.title(f'{label} prediction')
     plt.legend()
