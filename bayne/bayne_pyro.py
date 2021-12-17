@@ -26,9 +26,11 @@ class PyroBatchLinear(nn.Linear, PyroModule):
                                             .expand(self.bias.shape) \
                                             .to_event(self.bias.dim())
 
-        self.weight = PyroSample(prior=weight_prior)
+        self.weight_prior = weight_prior
+        self.weight = PyroSample(prior=self.weight_prior)
         if bias:
-            self.bias = PyroSample(prior=bias_prior)
+            self.bias_prior = bias_prior
+            self.bias = PyroSample(prior=self.bias_prior)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         bias = self.bias
@@ -43,11 +45,11 @@ class PyroBatchLinear(nn.Linear, PyroModule):
             return torch.baddbmm(bias.unsqueeze(1), input, weight.transpose(-1, -2))
 
     def to(self, *args, **kwargs):
-        super().to(*args, *kwargs)
+        self.dist_to(self.weight_prior, *args, **kwargs)
+        if self.bias is not None:
+            self.dist_to(self.bias_prior, *args, **kwargs)
 
-        self.dist_to(self.weight.prior, *args, **kwargs)
-        if self.bias:
-            self.dist_to(self.bias.prior, *args, **kwargs)
+        return super().to(*args, *kwargs)
 
     def dist_to(self, dist, *args, **kwargs):
         for key, value in dist.__dict__.items():
@@ -99,13 +101,17 @@ class PyroMCMCBNN(nn.Sequential, PyroModule):
         if self.mcmc is None:
             raise BNNNotSampledError()
 
-        sample_indices = self.clean_index(sample_indices, self.mcmc.num_samples)
+        sample_indices = self.clean_index(sample_indices, self.mcmc.num_samples).to(self._first_sample.device)
         samples = select_samples_by_idx(self.mcmc._samples, sample_indices)
 
         predictive = Predictive(func, posterior_samples=samples, return_sites=('_RETURN',), parallel=True)
         y = predictive(*args, **kwargs)['_RETURN']
 
         return y
+
+    @property
+    def _first_sample(self):
+        return next(iter(self.mcmc._samples.values()))
 
     def clean_index(self, indices, length):
         def saturate(i):
@@ -138,6 +144,12 @@ class PyroMCMCBNN(nn.Sequential, PyroModule):
     def predict_mean(self, X, num_samples=None):
         y = self.predict_dist(X, num_samples=num_samples)
         return y.mean(0)
+
+    def to(self, *args, **kwargs):
+        for module in self:
+            module.to(*args, **kwargs)
+
+        return super().to(*args, *kwargs)
 
 
 def select_samples_by_idx(samples, sample_indices, group_by_chain=False):
