@@ -3,14 +3,10 @@ from typing import Callable
 import torch
 from torch import nn
 
-from bayne.bounds.core import Bounds
-from bayne.bounds.ibp import SampleIntervalBoundPropagation
 
-
-class CROWNIntervalBoundPropagation(Bounds):
+class CROWNIntervalBoundPropagation:
     def __init__(self, adaptive_relu=True):
         self.adaptive_relu = adaptive_relu
-        self.ibp = SampleIntervalBoundPropagation()
 
     @torch.no_grad()
     def interval_bounds(self, model, input_bounds):
@@ -34,7 +30,7 @@ class CROWNIntervalBoundPropagation(Bounds):
         return linear_bounds
 
     def compute_alpha_beta(self, model, input_bounds):
-        LBs, UBs = self.ibp.interval_bounds(model, input_bounds, include_intermediate=True)
+        LBs, UBs = model.ibp(input_bounds, pre=True)
 
         alpha_lower, alpha_upper = [], []
         beta_lower, beta_upper = [], []

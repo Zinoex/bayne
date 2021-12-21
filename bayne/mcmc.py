@@ -1,220 +1,173 @@
-import math
-
 import torch
-from torch import nn
-from torch import Tensor
+from torch import nn, distributions
 import torch.nn.functional as F
 
-from bayne.containers import ParameterQueue
-from bayne.distributions import PriorWeightDistribution
-from bayne.sampler import HamiltonianMonteCarlo
-from bayne.util import ResetableModule
+from pyro.nn import PyroModule, PyroSample
+from pyro.infer.mcmc import HMC, MCMC
+from pyro.infer import Predictive
+import pyro.distributions as dist
+import pyro
 
 
-class UseState:
-    def __init__(self, network, state_idx, max_len=None):
-        self.network = network
-        self.state_idx = state_idx
-        self.max_len = max_len
+class PyroBatchLinear(nn.Linear, PyroModule):
+    def __init__(self, in_features: int, out_features: int, bias: bool = True, device=None, dtype=None, weight_prior=None, bias_prior=None) -> None:
+        # While calling super().__init__() creates the weights and we overwrite them later, it's just easier this way,
+        # and we get to inherit from nn.Linear. It shouldn't be too much of an issue considering that you usually
+        # only instantiate a model once during execution.
+        super(PyroBatchLinear, self).__init__(in_features, out_features, bias, device, dtype)
 
-    def __enter__(self):
-        def _set_maxlen_and_active_index(m):
-            if isinstance(m, ParameterQueue):
-                if self.max_len is not None:
-                    m.maxlen = self.max_len
-                m.active_index = self.state_idx
-        self.network.apply(_set_maxlen_and_active_index)
+        if weight_prior is None:
+            weight_prior = dist.Normal(torch.as_tensor(0.0, device=device), torch.as_tensor(1.0, device=device)) \
+                                            .expand(self.weight.shape) \
+                                            .to_event(self.weight.dim())
 
-    def __exit__(self, type, value, traceback):
-        def _clear_active_index(m):
-            if isinstance(m, ParameterQueue):
-                m.active_index = None
-        self.network.apply(_clear_active_index)
+        if bias and bias_prior is None:
+            bias_prior = dist.Normal(torch.as_tensor(0.0, device=device), torch.as_tensor(0.5, device=device)) \
+                                            .expand(self.bias.shape) \
+                                            .to_event(self.bias.dim())
 
-
-class MonteCarloBNN(nn.Module, ResetableModule):
-    def __init__(self, network, sampler=HamiltonianMonteCarlo(step_size=1e-4, num_steps=50)):
-        super().__init__()
-
-        self.network = network
-        self.num_states = 0
-        self.sampler = sampler
-
-        def _replace_parameter(m):
-            for name, param in list(m.named_parameters(recurse=False)):
-                del m._parameters[name]
-                queue = ParameterQueue(param.data, maxlen=None)
-                setattr(m, name, queue)
-        self.apply(_replace_parameter)
-
-    def sample(self, negative_log_prob, num_samples=200, reject=200, progress_bar=True):
-        with UseState(self.network, None, max_len=num_samples):
-            self.sampler.sample(self, negative_log_prob, num_samples, reject, progress_bar)
-            self.num_states = num_samples
-
-    def forward(self, *args, state_idx=None, **kwargs):
-        with UseState(self.network, state_idx):
-            return self.network(*args, **kwargs)
-
-    def predict_dist(self, *args, num_samples=None, dim=0, **kwargs):
-        preds = [self(*args, **kwargs, state_idx=idx) for idx in range(self.num_states)]
-        preds = torch.stack(preds, dim=dim)
-        return preds
-
-    def predict_mean(self, *args, num_samples=None, dim=0, **kwargs):
-        preds = self.predict_dist(*args, dim=dim, **kwargs)
-        return preds.mean(dim=dim)
-
-    def log_prior(self, dist=PriorWeightDistribution()):
-        return torch.stack([dist.log_prior(w).sum() for w in self.network.parameters()]).sum()
-
-    def save(self):
-        def _save(m):
-            if isinstance(m, ParameterQueue):
-                m.save()
-        self.apply(_save)
-
-
-class BatchModule(nn.Module):
-    def __init__(self):
-        super(BatchModule, self).__init__()
-
-        self.full = False
-
-    @staticmethod
-    def set_full(module):
-        module.full = True
-
-    @staticmethod
-    def reset_full(module):
-        module.full = False
-
-
-class BatchModeFull:
-    def __init__(self, network):
-        self.network = network
-
-    def __enter__(self):
-        self.network.apply(BatchModule.set_full)
-
-    def __exit__(self, type, value, traceback):
-        self.network.apply(BatchModule.reset_full)
-
-
-class BatchLinear(BatchModule):
-    __constants__ = ['in_features', 'out_features']
-    in_features: int
-    out_features: int
-
-    def __init__(self, in_features: int, out_features: int, bias: bool = True, device=None, dtype=None) -> None:
-        factory_kwargs = {'device': device, 'dtype': dtype}
-        super(BatchLinear, self).__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.weight = ParameterQueue(torch.empty((out_features, in_features), **factory_kwargs))
+        self.weight_prior = weight_prior
+        self.weight = PyroSample(prior=self.weight_prior)
         if bias:
-            self.bias = ParameterQueue(torch.empty(out_features, **factory_kwargs))
-        else:
-            self.register_parameter('bias', None)
-        self.reset_parameters()
+            self.bias_prior = bias_prior
+            self.bias = PyroSample(prior=self.bias_prior)
 
-    def reset_parameters(self) -> None:
-        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        bias = self.bias
+        weight = self.weight
+
+        if weight.dim() == 2:
+            return F.linear(input, weight, bias)
+        else:
+            if input.dim() == 2:
+                input = input.unsqueeze(0).expand(weight.size(0), *input.size())
+
+            return torch.baddbmm(bias.unsqueeze(1), input, weight.transpose(-1, -2))
+
+    def to(self, *args, **kwargs):
+        self.dist_to(self.weight_prior, *args, **kwargs)
         if self.bias is not None:
-            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
-            bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
-            nn.init.uniform_(self.bias, -bound, bound)
+            self.dist_to(self.bias_prior, *args, **kwargs)
 
-    def forward(self, input: Tensor) -> Tensor:
-        if self.weight.active_index is None or isinstance(self.weight.active_index, int):
-            return F.linear(input, self.weight, self.bias)
+        return super().to(*args, *kwargs)
 
-        weight = self.weight.active_weights()
-        if self.full:
-            if input.dim() != 3:
-                input = input.unsqueeze(0).expand(weight.size(0), -1, -1)
-
-            input = input.transpose(-1, -2)
-        else:
-            input = input.unsqueeze(-1)
-
-        assert input.size(0) == weight.size(0), 'Incompatible size for batch linear layer'
-
-        if self.bias is None:
-            res = torch.bmm(input, weight)
-        else:
-            bias = self.bias.active_weights()
-            res = torch.baddbmm(bias.unsqueeze(-1), weight, input)
-
-        if self.full:
-            res = res.transpose(-1, -2)
-        else:
-            res = res.squeeze(-1)
-
-        return res
-
-    def extra_repr(self) -> str:
-        return 'in_features={}, out_features={}, bias={}'.format(
-            self.in_features, self.out_features, self.bias is not None
-        )
+    def dist_to(self, dist, *args, **kwargs):
+        for key, value in dist.__dict__.items():
+            if torch.is_tensor(value):
+                dist.__dict__[key] = value.to(*args, **kwargs)
+            elif isinstance(value, distributions.Distribution):
+                self.dist_to(value, *args, **kwargs)
 
 
-class BatchMonteCarloBNN(nn.Module, ResetableModule):
-    def __init__(self, network, sampler=HamiltonianMonteCarlo(step_size=1e-4, num_steps=50)):
-        super().__init__()
+class PyroSigmoid(nn.Sigmoid, PyroModule):
+    pass
 
-        self.network = network
-        self.num_states = 0
-        self.sampler = sampler
 
-    def sample(self, negative_log_prob, num_samples=200, reject=200, progress_bar=True):
-        def _set_maxlen_and_active_index(m):
-            if isinstance(m, ParameterQueue):
-                m.maxlen = num_samples
-                m.active_index = None
-        self.apply(_set_maxlen_and_active_index)
+class PyroTanh(nn.Tanh, PyroModule):
+    pass
 
-        self.sampler.sample(self, negative_log_prob, num_samples, reject, progress_bar)
-        self.num_states = num_samples
 
-    def forward(self, *args, state_indices=None, **kwargs):
-        def _set_active_index(m):
-            if isinstance(m, ParameterQueue):
-                m.active_index = state_indices
-        self.apply(_set_active_index)
+class PyroReLU(nn.ReLU, PyroModule):
+    pass
 
-        return self.network(*args, **kwargs)
 
-    def predict_dist(self, *args, num_samples=None, dim=0, **kwargs):
-        with BatchModeFull(self):
-            return self(*args, **kwargs, state_indices=torch.arange(self.num_states))
+class BNNNotSampledError(Exception):
+    pass
 
-    def predict_mean(self, *args, num_samples=None, dim=0, **kwargs):
-        preds = self.predict_dist(*args, dim=dim, **kwargs)
-        return preds.mean(dim=0)
 
-    def log_prior(self, dist=PriorWeightDistribution()):
-        return torch.stack([dist.log_prior(w).sum() for w in self.network.parameters()]).sum()
+class PyroMCMCBNN(nn.Sequential, PyroModule):
+    def __init__(self, *args, sigma=1.0, step_size=1e-6, num_steps=50):
+        super().__init__(*args)
 
-    def save(self):
-        def _save(m):
-            if isinstance(m, ParameterQueue):
-                m.save()
-        self.apply(_save)
+        self.sigma = sigma
 
-    def zero_grad(self, set_to_none: bool = False) -> None:
-        super().zero_grad(set_to_none)
+        self.hmc_kernel = HMC(self, step_size=step_size, num_steps=num_steps, jit_compile=True, ignore_jit_warnings=True)
+        self.mcmc = None
 
-        def _zero_grad_param_queue(m):
-            if isinstance(m, ParameterQueue):
-                for p in m.deque:
-                    if p.grad is not None:
-                        if set_to_none:
-                            p.grad = None
-                        else:
-                            if p.grad.grad_fn is not None:
-                                p.grad.detach_()
-                            else:
-                                p.grad.requires_grad_(False)
-                            p.grad.zero_()
-        self.apply(_zero_grad_param_queue)
+    def forward(self, X, y=None):
+        mean = super().forward(X)
+
+        if y is not None:
+            with pyro.plate("data", device=X.device):
+                obs = pyro.sample("obs", dist.Normal(mean, self.sigma), obs=y)
+
+        return mean
+
+    def sample(self, X, y, num_samples=200, reject=200):
+        self.mcmc = MCMC(self.hmc_kernel, num_samples=num_samples, warmup_steps=reject)
+        self.mcmc.run(X, y)
+
+    def func_index(self, func, sample_indices, *args, **kwargs):
+        if self.mcmc is None:
+            raise BNNNotSampledError()
+
+        sample_indices = self.clean_index(sample_indices, self.mcmc.num_samples).to(self._first_sample.device)
+        samples = select_samples_by_idx(self.mcmc._samples, sample_indices)
+
+        predictive = Predictive(func, posterior_samples=samples, return_sites=('_RETURN',), parallel=True)
+        y = predictive(*args, **kwargs)['_RETURN']
+
+        return y
+
+    @property
+    def _first_sample(self):
+        return next(iter(self.mcmc._samples.values()))
+
+    def clean_index(self, indices, length):
+        def saturate(i):
+            return min(max(i, -length), length - 1)
+
+        if isinstance(indices, slice):
+            start = saturate(indices.start)
+            stop = None if indices.stop is None else saturate(indices.stop)
+
+            indices = list(range(start, stop, indices.step))
+
+        indices = torch.as_tensor(indices)
+        if torch.any((indices < -length) | (indices >= length)):
+            raise IndexError('sample index out of range')
+
+        # Shift negative to positive
+        return (indices + self.mcmc.num_samples) % self.mcmc.num_samples
+
+    def predict_index(self, sample_indices, X):
+        return self.func_index(self, sample_indices, X)
+
+    def predict_dist(self, X, num_samples=None):
+        if self.mcmc is None:
+            raise BNNNotSampledError()
+
+        predictive = Predictive(self, posterior_samples=self.mcmc.get_samples(num_samples), return_sites=('_RETURN',), parallel=True)
+        y = predictive(X)['_RETURN']
+        return y
+
+    def predict_mean(self, X, num_samples=None):
+        y = self.predict_dist(X, num_samples=num_samples)
+        return y.mean(0)
+
+    def to(self, *args, **kwargs):
+        for module in self:
+            module.to(*args, **kwargs)
+
+        return super().to(*args, *kwargs)
+
+
+def select_samples_by_idx(samples, sample_indices, group_by_chain=False):
+    """
+    Performs selection from given MCMC samples.
+
+    :param dictionary samples: Samples object to sample from.
+    :param IntTensor sample_indices: Indices of samples to return.
+    :param bool group_by_chain: Whether to preserve the chain dimension. If True,
+        all samples will have num_chains as the size of their leading dimension.
+    :return: dictionary of samples keyed by site name.
+    """
+    if not samples:
+        raise ValueError("No samples found from MCMC run.")
+    if group_by_chain:
+        batch_dim = 1
+    else:
+        samples = {k: v.reshape((-1,) + v.shape[2:]) for k, v in samples.items()}
+        batch_dim = 0
+    samples = {k: v.index_select(batch_dim, sample_indices) for k, v in samples.items()}
+    return samples

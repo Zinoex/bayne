@@ -21,20 +21,23 @@ from torch.utils.data import TensorDataset
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 
 df = pd.read_csv(os.path.join(BASE_DIR, 'data/weatherHistory.csv'))
-df = df[['Temperature (C)', 'Apparent Temperature (C)']].astype(np.float32)
+df = df[['Humidity', 'Apparent Temperature (C)']].astype(np.float32)
 
-X = df[['Apparent Temperature (C)']].values
-y = df[['Temperature (C)']].values
+X = df[['Humidity']].values
+y = df[['Apparent Temperature (C)']].values
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 X_scaler = StandardScaler()
 y_scaler = StandardScaler()
 
-X_train = torch.tensor(X_scaler.fit_transform(X_train))
-X_test = torch.tensor(X_scaler.transform(X_test))
-y_train = torch.tensor(y_scaler.fit_transform(y_train))
-y_test = torch.tensor(y_scaler.transform(y_test))
+X_train = X_scaler.fit_transform(X_train)
+X_test = X_scaler.transform(X_test)
+y_train = y_scaler.fit_transform(y_train)
+y_test = y_scaler.transform(y_test)
+
+X_train, y_train = torch.as_tensor(X_train), torch.as_tensor(y_train)
+X_test, y_test = torch.as_tensor(X_test), torch.as_tensor(y_test)
 
 weather_features = X.shape[1]
 

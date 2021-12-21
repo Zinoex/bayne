@@ -1,2 +1,1 @@
-from .crown_ibp import CROWNIntervalBoundPropagation
-from .ibp import SampleIntervalBoundPropagation
+from .ibp import interval_bound_propagation

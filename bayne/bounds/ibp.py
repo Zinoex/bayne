@@ -1,16 +1,12 @@
-from typing import Tuple
-
 import torch
 import torch.nn.functional as F
 
-from bayne.bounds.core import Bounds
 from torch import nn
 
 from bayne.bounds.util import notnull, add_method
-from bayne.variational_inference import VariationalLinear
 
 
-class SampleIntervalBoundPropagation(Bounds):
+def interval_bound_propagation(class_or_obj):
     """
     Propagate a sample interval through a deterministic fully-connected feedforward network.
     This can correspond to a weight sample using MCMC.
@@ -19,7 +15,7 @@ class SampleIntervalBoundPropagation(Bounds):
     - The network is nn.Sequential
     - All layers of the network is nn.Linear or a monotone activation function
 
-    This method does _not_ support weight bounds.
+    This method does _not_ support weight bounds, only input bounds.
 
     @misc{wicker2020probabilistic,
       title={Probabilistic Safety for Bayesian Neural Networks},
@@ -31,44 +27,6 @@ class SampleIntervalBoundPropagation(Bounds):
     }
     """
 
-    @torch.no_grad()
-    def interval_bounds(self, model: nn.Sequential, input_bounds: Tuple[torch.Tensor, torch.Tensor], include_intermediate=False):
-        lower, upper = input_bounds
-
-        LBs, UBs = [], []
-
-        for module in model:
-            if isinstance(module, (nn.Linear, VariationalLinear)):
-                mid = (lower + upper) / 2
-                diff = (upper - lower) / 2
-
-                w_mid = torch.matmul(module.weight, mid)
-                w_diff = torch.matmul(torch.abs(module.weight), diff.unsqueeze(-1))[..., 0]
-
-                lower = w_mid - w_diff
-                upper = w_mid + w_diff
-
-                if module.bias is not None:
-                    lower += module.bias
-                    upper += module.bias
-            else:
-                lower = module(lower)
-                upper = module(upper)
-
-            LBs.append(lower)
-            UBs.append(upper)
-
-        if include_intermediate:
-            return LBs, UBs
-        else:
-            return lower, upper
-
-    @torch.no_grad()
-    def linear_bounds(self, model: nn.Sequential, input_bounds: Tuple[torch.Tensor, torch.Tensor]):
-        raise NotImplementedError()
-
-
-def interval_bound_propagation(class_or_obj):
     if isinstance(class_or_obj, nn.Sequential) or (isinstance(class_or_obj, type) and issubclass(class_or_obj, nn.Sequential)):
         return interval_bound_propagation_sequential(class_or_obj)
     elif isinstance(class_or_obj, nn.Linear) or (isinstance(class_or_obj, type) and issubclass(class_or_obj, nn.Linear)):
@@ -79,7 +37,7 @@ def interval_bound_propagation(class_or_obj):
 
 def interval_bound_propagation_sequential(class_or_obj):
     @torch.no_grad()
-    def ibp(self: nn.Sequential, lower: torch.Tensor, upper: torch.Tensor, include_intermediate: bool = False):
+    def ibp(self: nn.Sequential, lower: torch.Tensor, upper: torch.Tensor, pre: bool = False):
         with notnull(getattr(self, '_pyro_context', None)):
             LBs, UBs = [], []
 
@@ -88,13 +46,13 @@ def interval_bound_propagation_sequential(class_or_obj):
                     # Decorator also adds the method inplace.
                     interval_bound_propagation(module)
 
-                lower, upper = module.ibp(lower, upper, include_intermediate)
-
-                if include_intermediate:
+                if pre:
                     LBs.append(lower)
                     UBs.append(upper)
 
-            if include_intermediate:
+                lower, upper = module.ibp(lower, upper)
+
+            if pre:
                 return LBs, UBs
             else:
                 return lower, upper
@@ -105,7 +63,7 @@ def interval_bound_propagation_sequential(class_or_obj):
 
 def interval_bound_propagation_linear(class_or_obj):
     @torch.no_grad()
-    def ibp(self: nn.Linear, lower: torch.Tensor, upper: torch.Tensor, include_intermediate: bool = False):
+    def ibp(self: nn.Linear, lower: torch.Tensor, upper: torch.Tensor):
         with notnull(getattr(self, '_pyro_context', None)):
             mid = (lower + upper) / 2
             diff = (upper - lower) / 2
@@ -142,7 +100,7 @@ def interval_bound_propagation_linear(class_or_obj):
 
 def interval_bound_propagation_activation(class_or_obj):
     @torch.no_grad()
-    def ibp(self: nn.Module, lower: torch.Tensor, upper: torch.Tensor, include_intermediate: bool = False):
+    def ibp(self: nn.Module, lower: torch.Tensor, upper: torch.Tensor):
         with notnull(getattr(self, '_pyro_context', None)):
             return self(lower), self(upper)
 

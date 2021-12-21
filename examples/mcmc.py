@@ -1,13 +1,11 @@
+import math
 from argparse import ArgumentParser
 
 import torch
-from torch import nn
-from torch.nn import Linear
 from torch.utils.data import DataLoader
 
-from bayne.mcmc import MonteCarloBNN
-from bayne.nll import MinibatchGaussianNegativeLogProb, GaussianNegativeLogProb
-from bayne.sampler import StochasticGradientHMC, CyclicalStochasticGradientHMC, HamiltonianMonteCarlo
+from bayne.mcmc import PyroMCMCBNN, PyroBatchLinear, PyroTanh
+from bayne.bounds.ibp import interval_bound_propagation
 from examples.noisy_sine import NoisySineDataset
 from examples.test import test
 
@@ -18,36 +16,33 @@ from examples.test import test
 ################################################################
 
 
-class ExampleMonteCarloBNN(nn.Sequential):
-    def __init__(self, in_features, out_features):
-        super().__init__(
-            Linear(in_features, 64),
-            nn.ReLU(),
-            Linear(64, 64),
-            nn.ReLU(),
-            Linear(64, out_features)
-        )
-
-        # nn.init.xavier_normal_(self[0].weight)
-        # nn.init.xavier_normal_(self[2].weight)
-
-
 def train(model, device):
     dataset = NoisySineDataset()
-    dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=0)
-    negative_log_prob = MinibatchGaussianNegativeLogProb(model, dataloader, device, noise=0.3)
+    dataloader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=0)
 
-    model.sample(negative_log_prob, num_samples=500, reject=500)
+    X, y = next(iter(dataloader))
+    X, y = X.to(device), y.to(device)
+
+    # We use so many samples because we need the velocity to be resampled much.
+    # Could be improve by modifying Pyro HMC to allow resampling at each iteration.
+    model.sample(X, y, num_samples=100000, reject=2000)
 
 
 def main(args):
     device = torch.device(args.device)
 
-    subnetwork = ExampleMonteCarloBNN(1, 1).to(device)
-    model = MonteCarloBNN(subnetwork, sampler=StochasticGradientHMC(step_size=5e-3, momentum_decay=0.05, grad_noise=0.01, num_steps=50))
+    net = interval_bound_propagation(PyroMCMCBNN(
+            PyroBatchLinear(1, 16),
+            PyroTanh(),
+            PyroBatchLinear(16, 16),
+            PyroTanh(),
+            PyroBatchLinear(16, 1),
+            sigma=0.2,
+            num_steps=100
+    )).to(device)
 
-    train(model, device)
-    test(model, device, 'HMC')
+    train(net, device)
+    test(net, device, 'HMC')
 
 
 def parse_arguments():
