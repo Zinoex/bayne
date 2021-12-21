@@ -3,6 +3,7 @@ from matplotlib import pyplot as plt
 from torch.nn import MSELoss
 from torch.utils.data import DataLoader
 
+from bayne.bounds.crown_ibp import CROWNIntervalBoundPropagation
 from bayne.util import timer
 from examples.noisy_sine import NoisySineDataset
 
@@ -15,28 +16,28 @@ def plot_bounds(model, device):
 
     lower_ibp, upper_ibp = timer(model.func_index)(model.ibp, [9000], lower_x, upper_x)
 
-    # crown = CROWNIntervalBoundPropagation()
-    # linear_output_bounds = timer(crown.linear_bounds)(sequential_network, input_bounds)
+    crown = CROWNIntervalBoundPropagation()
+    lower_lbp, upper_lbp = timer(model.func_index)(crown.linear_bounds, [9000], model, lower_x, upper_x)
 
     lower_x, upper_x = lower_x.cpu(), upper_x.cpu()
-    lower_ibp, upper_ibp = lower_ibp.cpu(), upper_ibp.cpu()
-    # linear_output_bounds = (linear_output_bounds[0][0].cpu(), linear_output_bounds[0][1].cpu()), (linear_output_bounds[1][0].cpu(), linear_output_bounds[1][1].cpu())
+    lower_ibp, upper_ibp = lower_ibp[0].cpu(), upper_ibp[0].cpu()
+    lower_lbp, upper_lbp = (lower_lbp[0][0].cpu(), lower_lbp[1][0].cpu()), (upper_lbp[0][0].cpu(), upper_lbp[1][0].cpu())
 
     for i in range(num_slices):
         x1, x2 = lower_x[i].item(), upper_x[i].item()
-        y1, y2 = lower_ibp[0, i].item(), upper_ibp[0, i].item()
+        y1, y2 = lower_ibp[i].item(), upper_ibp[i].item()
 
         plt.plot([x1, x2], [y1, y1], color='blue', linestyle='dashed', label='IBP' if i == 0 else None)
         plt.plot([x1, x2], [y2, y2], color='blue', linestyle='dashed')
 
-        # y1, y2 = linear_output_bounds[0][0][i, 0, 0] * x1 + linear_output_bounds[0][1][i, 0], linear_output_bounds[0][0][i, 0, 0] * x2 + linear_output_bounds[0][1][i, 0]
-        # y3, y4 = linear_output_bounds[1][0][i, 0, 0] * x1 + linear_output_bounds[1][1][i, 0], linear_output_bounds[1][0][i, 0, 0] * x2 + linear_output_bounds[1][1][i, 0]
-        #
-        # y1, y2 = y1.item(), y2.item()
-        # y3, y4 = y3.item(), y4.item()
-        #
-        # plt.plot([x1, x2], [y1, y2], color='green', linestyle='dashed', label='CROWN-IBP' if i == 0 else None)
-        # plt.plot([x1, x2], [y3, y4], color='green', linestyle='dashed')
+        y1, y2 = lower_lbp[0][i, 0, 0] * x1 + lower_lbp[1][i, 0], lower_lbp[0][i, 0, 0] * x2 + lower_lbp[1][i, 0]
+        y3, y4 = upper_lbp[0][i, 0, 0] * x1 + upper_lbp[1][i, 0], upper_lbp[0][i, 0, 0] * x2 + upper_lbp[1][i, 0]
+
+        y1, y2 = y1.item(), y2.item()
+        y3, y4 = y3.item(), y4.item()
+
+        plt.plot([x1, x2], [y1, y2], color='green', linestyle='dashed', label='CROWN-IBP' if i == 0 else None)
+        plt.plot([x1, x2], [y3, y4], color='green', linestyle='dashed')
 
     X = torch.linspace(-2, 2, 1000, device=device).view(-1, 1)
     y = model.predict_index([9000], X)[0]

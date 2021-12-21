@@ -3,15 +3,16 @@ from typing import Callable
 import torch
 from torch import nn
 
+from bayne.bounds.util import notnull
+
 
 class CROWNIntervalBoundPropagation:
     def __init__(self, adaptive_relu=True):
         self.adaptive_relu = adaptive_relu
 
     @torch.no_grad()
-    def interval_bounds(self, model, input_bounds):
-        lower, upper = input_bounds
-        (Omega_0, Omega_accumulator), (Gamma_0, Gamma_accumulator) = self.linear_bounds(model, input_bounds)
+    def interval_bounds(self, model, lower, upper):
+        (Omega_0, Omega_accumulator), (Gamma_0, Gamma_accumulator) = self.linear_bounds(model, lower, upper)
 
         lower, upper = lower.unsqueeze(-2), upper.unsqueeze(-2)
 
@@ -23,14 +24,15 @@ class CROWNIntervalBoundPropagation:
         return min_Omega_x + Omega_accumulator, max_Gamma_x + Gamma_accumulator
 
     @torch.no_grad()
-    def linear_bounds(self, model, input_bounds):
-        alpha, beta = self.compute_alpha_beta(model, input_bounds)
-        linear_bounds = self.compute_linear_bounds(model, alpha, beta)
+    def linear_bounds(self, model, lower, upper):
+        with notnull(getattr(self, '_pyro_context', None)):
+            alpha, beta = self.compute_alpha_beta(model, lower, upper)
+            linear_bounds = self.compute_linear_bounds(model, alpha, beta)
 
-        return linear_bounds
+            return linear_bounds
 
-    def compute_alpha_beta(self, model, input_bounds):
-        LBs, UBs = model.ibp(input_bounds, pre=True)
+    def compute_alpha_beta(self, model, lower, upper):
+        LBs, UBs = model.ibp(lower, upper, pre=True)
 
         alpha_lower, alpha_upper = [], []
         beta_lower, beta_upper = [], []
@@ -180,7 +182,7 @@ class CROWNIntervalBoundPropagation:
 
         for k, module in reversed(list(zip(range(1, num_linear + 1), linear_modules))):
             if isinstance(module, nn.Linear):
-                bias_k = module.bias if module.bias else torch.zeros((1,), device=device)
+                bias_k = module.bias if module.bias is not None else torch.zeros((1,), device=device)
                 weight_k = module.weight.unsqueeze(0)
 
                 # Lower bound
