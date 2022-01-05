@@ -3,21 +3,18 @@ from matplotlib import pyplot as plt
 from torch.nn import MSELoss
 from torch.utils.data import DataLoader
 
-from bayne.bounds.crown_ibp import CROWNIntervalBoundPropagation
 from bayne.util import timer
 from examples.noisy_sine import NoisySineDataset
 
 
 @torch.no_grad()
 def plot_bounds(model, device):
-    num_slices = 100
+    num_slices = 10
     boundaries = torch.linspace(-2, 2, num_slices + 1).view(-1, 1).to(device)
     lower_x, upper_x = boundaries[:-1], boundaries[1:]
 
     lower_ibp, upper_ibp = timer(model.func_index)(model.ibp, [9000], lower_x, upper_x)
-
-    crown = CROWNIntervalBoundPropagation()
-    lower_lbp, upper_lbp = timer(model.func_index)(crown.linear_bounds, [9000], model, lower_x, upper_x)
+    lower_lbp, upper_lbp = timer(model.func_index)(model.crown_ibp, [9000], lower_x, upper_x)
 
     lower_x, upper_x = lower_x.cpu(), upper_x.cpu()
     lower_ibp, upper_ibp = lower_ibp[0].cpu(), upper_ibp[0].cpu()

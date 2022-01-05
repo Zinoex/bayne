@@ -4,7 +4,8 @@ from argparse import ArgumentParser
 import torch
 from torch.utils.data import DataLoader
 
-from bayne.mcmc import PyroMCMCBNN, PyroBatchLinear, PyroTanh
+from bayne.bounds.crown_ibp import linear_bound_propagation
+from bayne.mcmc import PyroMCMCBNN, PyroBatchLinear, PyroTanh, PyroReLU
 from bayne.bounds.ibp import interval_bound_propagation
 from examples.noisy_sine import NoisySineDataset
 from examples.test import test
@@ -31,7 +32,7 @@ def train(model, device):
 def main(args):
     device = torch.device(args.device)
 
-    net = interval_bound_propagation(PyroMCMCBNN(
+    net = linear_bound_propagation(interval_bound_propagation(PyroMCMCBNN(
             PyroBatchLinear(1, 16),
             PyroTanh(),
             PyroBatchLinear(16, 16),
@@ -39,7 +40,7 @@ def main(args):
             PyroBatchLinear(16, 1),
             sigma=0.2,
             num_steps=100
-    )).to(device)
+    ))).to(device)
 
     train(net, device)
     test(net, device, 'HMC')

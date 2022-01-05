@@ -69,18 +69,19 @@ def interval_bound_propagation_linear(class_or_obj):
             diff = (upper - lower) / 2
 
             weight = self.weight
+            abs_weight = torch.abs(weight)
             bias = self.bias
 
             if weight.dim() == 2:
                 w_mid = F.linear(mid, weight)
-                w_diff = F.linear(diff, torch.abs(weight))
+                w_diff = F.linear(diff, abs_weight)
             else:
                 if mid.dim() == 2:
                     mid = mid.unsqueeze(0).expand(weight.size(0), *mid.size())
                     diff = diff.unsqueeze(0).expand(weight.size(0), *diff.size())
 
                 w_mid = torch.bmm(mid, weight.transpose(-1, -2))
-                w_diff = torch.bmm(diff, weight.transpose(-1, -2))
+                w_diff = torch.bmm(diff, abs_weight.transpose(-1, -2))
 
             lower = w_mid - w_diff
             upper = w_mid + w_diff
