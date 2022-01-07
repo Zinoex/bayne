@@ -9,12 +9,12 @@ from examples.noisy_sine import NoisySineDataset
 
 @torch.no_grad()
 def plot_bounds(model, device):
-    num_slices = 10
+    num_slices = 20
     boundaries = torch.linspace(-2, 2, num_slices + 1).view(-1, 1).to(device)
     lower_x, upper_x = boundaries[:-1], boundaries[1:]
 
-    lower_ibp, upper_ibp = timer(model.func_index)(model.ibp, [9000], lower_x, upper_x)
-    lower_lbp, upper_lbp = timer(model.func_index)(model.crown_ibp, [9000], lower_x, upper_x)
+    lower_ibp, upper_ibp = timer(model.func_index)(model.ibp, torch.arange(9000, 10000), lower_x, upper_x)
+    lower_lbp, upper_lbp = timer(model.func_index)(model.crown, torch.arange(9000, 10000), lower_x, upper_x)
 
     lower_x, upper_x = lower_x.cpu(), upper_x.cpu()
     lower_ibp, upper_ibp = lower_ibp[0].cpu(), upper_ibp[0].cpu()

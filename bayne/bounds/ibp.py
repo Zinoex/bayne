@@ -6,7 +6,7 @@ from torch import nn
 from bayne.bounds.util import notnull, add_method
 
 
-def interval_bound_propagation(class_or_obj):
+def ibp(class_or_obj):
     """
     Propagate a sample interval through a deterministic fully-connected feedforward network.
     This can correspond to a weight sample using MCMC.
@@ -28,23 +28,23 @@ def interval_bound_propagation(class_or_obj):
     """
 
     if isinstance(class_or_obj, nn.Sequential) or (isinstance(class_or_obj, type) and issubclass(class_or_obj, nn.Sequential)):
-        return interval_bound_propagation_sequential(class_or_obj)
+        return ibp_sequential(class_or_obj)
     elif isinstance(class_or_obj, nn.Linear) or (isinstance(class_or_obj, type) and issubclass(class_or_obj, nn.Linear)):
-        return interval_bound_propagation_linear(class_or_obj)
+        return ibp_linear(class_or_obj)
     else:
-        return interval_bound_propagation_activation(class_or_obj)
+        return ibp_activation(class_or_obj)
 
 
-def interval_bound_propagation_sequential(class_or_obj):
+def ibp_sequential(class_or_obj):
     @torch.no_grad()
-    def ibp(self: nn.Sequential, lower: torch.Tensor, upper: torch.Tensor, pre: bool = False):
+    def _ibp(self: nn.Sequential, lower: torch.Tensor, upper: torch.Tensor, pre: bool = False):
         with notnull(getattr(self, '_pyro_context', None)):
             LBs, UBs = [], []
 
             for i, module in enumerate(self):
                 if not hasattr(module, 'ibp'):
                     # Decorator also adds the method inplace.
-                    interval_bound_propagation(module)
+                    ibp(module)
 
                 if pre:
                     LBs.append(lower)
@@ -57,11 +57,11 @@ def interval_bound_propagation_sequential(class_or_obj):
             else:
                 return lower, upper
 
-    add_method(class_or_obj, 'ibp', ibp)
+    add_method(class_or_obj, 'ibp', _ibp)
     return class_or_obj
 
 
-def interval_bound_propagation_linear(class_or_obj):
+def ibp_linear(class_or_obj):
     @torch.no_grad()
     def ibp(self: nn.Linear, lower: torch.Tensor, upper: torch.Tensor):
         with notnull(getattr(self, '_pyro_context', None)):
@@ -76,12 +76,8 @@ def interval_bound_propagation_linear(class_or_obj):
                 w_mid = F.linear(mid, weight)
                 w_diff = F.linear(diff, abs_weight)
             else:
-                if mid.dim() == 2:
-                    mid = mid.unsqueeze(0).expand(weight.size(0), *mid.size())
-                    diff = diff.unsqueeze(0).expand(weight.size(0), *diff.size())
-
-                w_mid = torch.bmm(mid, weight.transpose(-1, -2))
-                w_diff = torch.bmm(diff, abs_weight.transpose(-1, -2))
+                w_mid = torch.matmul(weight.unsqueeze(1), mid.unsqueeze(-1))[..., 0]
+                w_diff = torch.matmul(abs_weight.unsqueeze(1), diff.unsqueeze(-1))[..., 0]
 
             lower = w_mid - w_diff
             upper = w_mid + w_diff
@@ -99,7 +95,7 @@ def interval_bound_propagation_linear(class_or_obj):
     return class_or_obj
 
 
-def interval_bound_propagation_activation(class_or_obj):
+def ibp_activation(class_or_obj):
     @torch.no_grad()
     def ibp(self: nn.Module, lower: torch.Tensor, upper: torch.Tensor):
         with notnull(getattr(self, '_pyro_context', None)):
