@@ -24,7 +24,7 @@ def train(model, device):
 
     # We use so many samples because we need the velocity to be resampled much.
     # Could be improve by modifying Pyro HMC to allow resampling at each iteration.
-    model.sample(X, y, num_samples=100000, reject=2000)
+    model.sample(X, y, num_samples=1000, reject=200)
 
 
 def main(args):

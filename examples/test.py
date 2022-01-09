@@ -13,12 +13,16 @@ def plot_bounds(model, device):
     boundaries = torch.linspace(-2, 2, num_slices + 1).view(-1, 1).to(device)
     lower_x, upper_x = boundaries[:-1], boundaries[1:]
 
-    lower_ibp, upper_ibp = timer(model.func_index)(model.ibp, torch.arange(9000, 10000), lower_x, upper_x)
-    lower_lbp, upper_lbp = timer(model.func_index)(model.crown, torch.arange(9000, 10000), lower_x, upper_x)
+    bound_indices = torch.arange(0, 1000)
+
+    lower_ibp, upper_ibp = timer(model.func_index)(model.ibp, bound_indices, lower_x, upper_x)
+    lower_lbp, upper_lbp = timer(model.func_index)(model.crown, bound_indices, lower_x, upper_x)
+
+    sample_to_plot = 900
 
     lower_x, upper_x = lower_x.cpu(), upper_x.cpu()
-    lower_ibp, upper_ibp = lower_ibp[0].cpu(), upper_ibp[0].cpu()
-    lower_lbp, upper_lbp = (lower_lbp[0][0].cpu(), lower_lbp[1][0].cpu()), (upper_lbp[0][0].cpu(), upper_lbp[1][0].cpu())
+    lower_ibp, upper_ibp = lower_ibp[sample_to_plot].cpu(), upper_ibp[sample_to_plot].cpu()
+    lower_lbp, upper_lbp = (lower_lbp[0][sample_to_plot].cpu(), lower_lbp[1][sample_to_plot].cpu()), (upper_lbp[0][sample_to_plot].cpu(), upper_lbp[1][sample_to_plot].cpu())
 
     for i in range(num_slices):
         x1, x2 = lower_x[i].item(), upper_x[i].item()
@@ -37,7 +41,7 @@ def plot_bounds(model, device):
         plt.plot([x1, x2], [y3, y4], color='green', linestyle='dashed')
 
     X = torch.linspace(-2, 2, 1000, device=device).view(-1, 1)
-    y = model.predict_index([9000], X)[0]
+    y = model.predict_index(bound_indices, X)[sample_to_plot]
     X, y = X.cpu().numpy(), y.cpu().numpy()
 
     plt.plot(X, y, color='blueviolet', label='Function to bound')
