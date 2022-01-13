@@ -41,7 +41,7 @@ def main(args):
     )))).to(device)
 
     train(net, device)
-    test(net, device, 'HMC')
+    test(net, device, 'MCMC')
 
 
 def parse_arguments():
