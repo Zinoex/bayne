@@ -29,6 +29,8 @@ def plot_bounds(model, device, label):
     plt.clf()
     plt.figure(figsize=(6.4 * 2, 4.8 * 2))
 
+    plt.ylim(-4, 4)
+
     for i in range(num_slices):
         x1, x2 = lower_x[i].item(), upper_x[i].item()
         y1, y2 = lower_ibp[i].item(), upper_ibp[i].item()
