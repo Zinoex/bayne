@@ -56,7 +56,7 @@ def plot_bounds(model, device, label):
     plt.title(f'Bound propagation')
     plt.legend()
 
-    plt.savefig(f'visualization/{label}_lbp.png', dpi=1200)
+    plt.savefig(f'visualization/{label}_lbp.png', dpi=300)
 
 
 def plot_bnn(model, device, label):
@@ -93,8 +93,7 @@ def plot_bnn(model, device, label):
     plt.title(f'{label} BNN prediction')
     plt.legend()
 
-    plt.savefig(f'visualization/{label}_bnn.png', dpi=1200)
-
+    plt.savefig(f'visualization/{label}_bnn.png', dpi=300)
 
 
 @torch.no_grad()

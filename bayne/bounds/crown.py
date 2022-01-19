@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Tuple
 
 import torch
 from torch import nn
@@ -85,7 +85,7 @@ def alpha_beta_sequential(model, LBs, UBs):
         assert torch.all(LB <= UB + 1e-6)
 
         n = UB <= 0
-        p = LB >= 0
+        p = 0 <= LB
         np = (LB < 0) & (0 < UB)
 
         if isinstance(module, nn.ReLU):
@@ -156,6 +156,7 @@ def alpha_beta_general(LB, UB, n, p, np, func, derivative):
     beta_upper_k = torch.zeros_like(LB)
 
     LB_act, UB_act = func(LB), func(UB)
+    LB_prime, UB_prime = derivative(LB), derivative(UB)
 
     d = (LB + UB) * 0.5  # Let d be the midpoint of the two bounds
     d_act = func(d)
@@ -175,28 +176,47 @@ def alpha_beta_general(LB, UB, n, p, np, func, derivative):
     beta_lower_k[p] = LB_act[p] - alpha_lower_k[p] * LB[p]
     beta_upper_k[p] = d_act[p] - alpha_upper_k[p] * d[p]
 
-    # Crossing zero
-    def f_lower(d):
-        return (func(UB[np]) - func(d)) / (UB[np] - d) - derivative(d)
+    #################
+    # Crossing zero #
+    #################
+    # Upper
+    UB_prime_at_LB = UB_prime * (LB - UB) + UB_act
+    direct_upper = np & (UB_prime_at_LB <= 0)
+    implicit_upper = np & (UB_prime_at_LB > 0)
+
+    alpha_upper_k[direct_upper] = slope[direct_upper]
 
     def f_upper(d):
-        return (func(d) - func(LB[np])) / (d - LB[np]) - derivative(d)
+        a_slope = (func(d) - func(LB[implicit_upper])) / (d - LB[implicit_upper])
+        a_derivative = derivative(d)
+        return a_slope - a_derivative
 
-    d_lower = bisection(LB[np], torch.zeros_like(LB[np]), f_lower)
-    d_upper = bisection(torch.zeros_like(UB[np]), UB[np], f_upper)
+    d_upper = bisection(torch.zeros_like(UB[implicit_upper]), UB[implicit_upper], f_upper)
 
-    # Taking the max slope is conservative wrt. bisection errors
-    alpha_lower_k[np] = torch.max((func(UB[np]) - func(d_lower)) / (UB[np] - d_lower), derivative(d_lower))
-    alpha_upper_k[np] = torch.max((func(d_upper) - func(LB[np])) / (d_upper - LB[np]), derivative(d_upper))
-
-    # They bounds should always pass through their endpoints
-    beta_lower_k[np] = UB_act[np] - alpha_lower_k[np] * UB[np]
+    alpha_upper_k[implicit_upper] = derivative(d_upper[0])
     beta_upper_k[np] = LB_act[np] - alpha_upper_k[np] * LB[np]
+
+    # Lower
+    LB_prime_at_UB = LB_prime * (UB - LB) + LB_act
+    direct_lower = np & (LB_prime_at_UB >= 0)
+    implicit_lower = np & (LB_prime_at_UB < 0)
+
+    alpha_lower_k[direct_lower] = slope[direct_lower]
+
+    def f_lower(d):
+        a_slope = (func(UB[implicit_lower]) - func(d)) / (UB[implicit_lower] - d)
+        a_derivative = derivative(d)
+        return a_derivative - a_slope
+
+    d_lower = bisection(LB[implicit_lower], torch.zeros_like(LB[implicit_lower]), f_lower)
+
+    alpha_lower_k[implicit_lower] = derivative(d_lower[1])
+    beta_lower_k[np] = UB_act[np] - alpha_lower_k[np] * UB[np]
 
     return (alpha_lower_k, alpha_upper_k), (beta_lower_k, beta_upper_k)
 
 
-def bisection(l: torch.Tensor, h: torch.Tensor, f: Callable[[torch.Tensor], torch.Tensor], num_iter=20) -> torch.Tensor:
+def bisection(l: torch.Tensor, h: torch.Tensor, f: Callable[[torch.Tensor], torch.Tensor], num_iter=20) -> Tuple[torch.Tensor, torch.Tensor]:
     midpoint = (l + h) / 2
 
     for _ in range(num_iter):
@@ -207,7 +227,7 @@ def bisection(l: torch.Tensor, h: torch.Tensor, f: Callable[[torch.Tensor], torc
 
         midpoint = (l + h) / 2
 
-    return midpoint
+    return l, h
 
 
 def linear_bounds(model, alpha, beta, batch_size, device):
