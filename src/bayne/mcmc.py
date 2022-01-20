@@ -3,7 +3,7 @@ from torch import nn, distributions
 import torch.nn.functional as F
 
 from pyro.nn import PyroModule, PyroSample
-from pyro.infer.mcmc import HMC, MCMC
+from pyro.infer.mcmc import HMC, MCMC, NUTS
 from pyro.infer import Predictive
 import pyro.distributions as dist
 import pyro
@@ -81,7 +81,8 @@ class PyroMCMCBNN(nn.Sequential, PyroModule):
 
         self.sigma = sigma
 
-        self.hmc_kernel = HMC(self, step_size=step_size, num_steps=num_steps, jit_compile=True, ignore_jit_warnings=True)
+        # self.hmc_kernel = HMC(self, step_size=step_size, num_steps=num_steps, jit_compile=True, ignore_jit_warnings=True)
+        self.hmc_kernel = NUTS(self, step_size=step_size, full_mass=False, max_tree_depth=6, jit_compile=True, ignore_jit_warnings=True)
         self.mcmc = None
 
     def forward(self, X, y=None):

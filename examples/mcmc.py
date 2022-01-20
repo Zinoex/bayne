@@ -3,9 +3,8 @@ from argparse import ArgumentParser
 import torch
 from torch.utils.data import DataLoader
 
-from src.bayne.bounds import linear_bound_propagation
-from src.bayne import PyroMCMCBNN, PyroBatchLinear, PyroTanh
-from src.bayne.bounds import interval_bound_propagation
+from bayne.bounds import ibp, crown_ibp, crown
+from bayne.mcmc import PyroMCMCBNN, PyroBatchLinear, PyroTanh
 from examples.noisy_sine import NoisySineDataset
 from examples.test import test
 
@@ -25,13 +24,13 @@ def train(model, device):
 
     # We use so many samples because we need the velocity to be resampled much.
     # Could be improve by modifying Pyro HMC to allow resampling at each iteration.
-    model.sample(X, y, num_samples=10000, reject=2000)
+    model.sample(X, y, num_samples=1000, reject=200)
 
 
 def main(args):
     device = torch.device(args.device)
 
-    net = linear_bound_propagation(interval_bound_propagation(PyroMCMCBNN(
+    net = crown(crown_ibp(ibp(PyroMCMCBNN(
             PyroBatchLinear(1, 16),
             PyroTanh(),
             PyroBatchLinear(16, 16),
@@ -39,10 +38,10 @@ def main(args):
             PyroBatchLinear(16, 1),
             sigma=0.2,
             num_steps=100
-    ))).to(device)
+    )))).to(device)
 
     train(net, device)
-    test(net, device, 'HMC')
+    test(net, device, 'MCMC')
 
 
 def parse_arguments():
