@@ -1,22 +1,15 @@
 # Bayne - Bayesian Neural Networks
-Pytorch-based Bayesian Neural Networks library
+Pytorch/Pyro-based Bayesian Neural Networks library
 
 Features:
-- Monte Carlo Dropout (MCD)
-  - Any architecture
-- Variational Inference (VI)
-  - Linear layers
-  - Configurable prior
-  - Supports additional variational architectures
 - Markov Chain Monte Carlo (MCMC)
-  - Any architecture
+  - Full connectected neural network with ReLU, Sigmoid, or Tanh activation
   - Configurable prior
-  - Hamiltonian Monte Carlo sampler
-
-Plans:
-- Additional layer types for variational inference
-- More sampler types for MCMC
-
+  - Hamiltonian Monte Carlo or NUTS sampler
+- Bounds propagation
+  - CROWN - linear bounds
+  - IBP - interval bounds
+  - CROWN-IBP - linear bounds
 
 Authors:
 - Frederik Baymler Mathiesen, PhD student @ TU Delft, Netherlands

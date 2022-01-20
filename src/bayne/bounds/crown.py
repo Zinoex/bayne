@@ -1,6 +1,6 @@
 import torch
 
-from bayne.bounds.core import Bounds
+from src.bayne import Bounds
 
 
 class CROWN(Bounds):

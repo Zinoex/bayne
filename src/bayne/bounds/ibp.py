@@ -3,7 +3,7 @@ import torch.nn.functional as F
 
 from torch import nn
 
-from bayne.bounds.util import notnull, add_method
+from src.bayne.bounds.util import notnull, add_method
 
 
 def interval_bound_propagation(class_or_obj):

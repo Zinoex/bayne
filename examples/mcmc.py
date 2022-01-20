@@ -1,12 +1,11 @@
-import math
 from argparse import ArgumentParser
 
 import torch
 from torch.utils.data import DataLoader
 
-from bayne.bounds.crown_ibp import linear_bound_propagation
-from bayne.mcmc import PyroMCMCBNN, PyroBatchLinear, PyroTanh, PyroReLU
-from bayne.bounds.ibp import interval_bound_propagation
+from src.bayne.bounds import linear_bound_propagation
+from src.bayne import PyroMCMCBNN, PyroBatchLinear, PyroTanh
+from src.bayne.bounds import interval_bound_propagation
 from examples.noisy_sine import NoisySineDataset
 from examples.test import test
 

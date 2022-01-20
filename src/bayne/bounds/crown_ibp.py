@@ -3,7 +3,7 @@ from typing import Callable
 import torch
 from torch import nn
 
-from bayne.bounds.util import notnull, add_method
+from src.bayne.bounds.util import notnull, add_method
 
 
 def linear_bound_propagation(model):
