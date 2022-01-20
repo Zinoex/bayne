@@ -4,7 +4,6 @@ import torch
 from torch import nn
 
 from bayne.bounds.util import notnull, add_method
-from pyro import poutine
 
 
 def crown(model):

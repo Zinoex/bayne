@@ -1,9 +1,7 @@
-from typing import Callable
-
 import torch
 from torch import nn
 
-from bayne.bounds.crown import alpha_beta_sequential, linear_bounds, surrogate_model
+from bayne.bounds.crown import alpha_beta_sequential, linear_bounds
 from bayne.bounds.util import notnull, add_method
 
 

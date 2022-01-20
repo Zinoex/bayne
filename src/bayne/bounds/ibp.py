@@ -3,7 +3,7 @@ import torch.nn.functional as F
 
 from torch import nn
 
-from src.bayne.bounds.util import notnull, add_method
+from bayne.bounds.util import notnull, add_method
 
 
 def ibp(class_or_obj):
