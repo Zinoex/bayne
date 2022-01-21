@@ -134,3 +134,4 @@ dmypy.json
 # custom
 data
 examples/visualization
+src/pytorch-sphinx-theme
