@@ -1,3 +1,5 @@
+import logging
+
 import torch
 from torch import nn, distributions
 import torch.nn.functional as F
@@ -7,6 +9,9 @@ from pyro.infer.mcmc import HMC, MCMC, NUTS
 from pyro.infer import Predictive
 import pyro.distributions as dist
 import pyro
+
+
+logger = logging.getLogger(__file__)
 
 
 class PyroBatchLinear(nn.Linear, PyroModule):
@@ -151,6 +156,22 @@ class PyroMCMCBNN(nn.Sequential, PyroModule):
             module.to(*args, **kwargs)
 
         return super().to(*args, *kwargs)
+
+    def state_dict(self, *args, **kwargs):
+        state_dict = super().state_dict(*args, **kwargs)
+        state_dict['samples'] = None if self.mcmc is None else self.mcmc._samples
+
+        return state_dict
+
+    def load_state_dict(self, state_dict: 'OrderedDict[str, Tensor]', strict: bool = True):
+        samples = state_dict.pop('samples')
+        if samples is None:
+            logger.warning('No samples in loaded BNN')
+        else:
+            self.mcmc = MCMC(self.hmc_kernel, num_samples=len(samples), warmup_steps=0)
+            self.mcmc._samples = samples
+
+        super().load_state_dict(state_dict, strict)
 
 
 def select_samples_by_idx(samples, sample_indices, group_by_chain=False):
