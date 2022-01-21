@@ -22,8 +22,6 @@ def train(model, device):
     X, y = next(iter(dataloader))
     X, y = X.to(device), y.to(device)
 
-    # We use so many samples because we need the velocity to be resampled much.
-    # Could be improve by modifying Pyro HMC to allow resampling at each iteration.
     model.sample(X, y, num_samples=1000, reject=200)
 
 
