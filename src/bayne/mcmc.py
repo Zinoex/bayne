@@ -168,7 +168,8 @@ class PyroMCMCBNN(nn.Sequential, PyroModule):
         if samples is None:
             logger.warning('No samples in loaded BNN')
         else:
-            self.mcmc = MCMC(self.hmc_kernel, num_samples=len(samples), warmup_steps=0)
+            num_samples = next(iter(samples.values())).size(1)
+            self.mcmc = MCMC(self.hmc_kernel, num_samples=num_samples, warmup_steps=0)
             self.mcmc._samples = samples
 
         super().load_state_dict(state_dict, strict)
