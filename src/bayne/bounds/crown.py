@@ -64,7 +64,7 @@ def subnetwork_crown(model, LBs, UBs, device):
 def interval_bounds(bounds, lower, upper):
     (Omega_0, Omega_accumulator), (Gamma_0, Gamma_accumulator) = bounds
 
-    lower, upper = lower.unsqueeze(-2), upper.unsqueeze(-2)
+    lower, upper = lower.unsqueeze(-1), upper.unsqueeze(-1)
 
     # We can do this instead of finding the Q-norm, as we only deal with perturbation over a hyperrectangular input,
     # and not a B_p(epsilon) ball
