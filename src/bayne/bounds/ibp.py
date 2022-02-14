@@ -1,9 +1,12 @@
+from typing import Union, Optional
+
 import torch
 import torch.nn.functional as F
 
 from torch import nn
 
-from bayne.bounds.util import notnull, add_method
+from .surrogate import SurrogateLinear
+from .util import notnull, add_method, IntervalBounds, LayerBounds
 
 
 def ibp(class_or_obj):
@@ -29,17 +32,17 @@ def ibp(class_or_obj):
 
     if isinstance(class_or_obj, nn.Sequential) or (isinstance(class_or_obj, type) and issubclass(class_or_obj, nn.Sequential)):
         return ibp_sequential(class_or_obj)
-    elif isinstance(class_or_obj, nn.Linear) or (isinstance(class_or_obj, type) and issubclass(class_or_obj, nn.Linear)):
+    elif isinstance(class_or_obj, (nn.Linear, SurrogateLinear)) or \
+            (isinstance(class_or_obj, type) and issubclass(class_or_obj, (nn.Linear, SurrogateLinear))):
         return ibp_linear(class_or_obj)
     else:
         return ibp_activation(class_or_obj)
 
 
 def ibp_sequential(class_or_obj):
-    @torch.no_grad()
-    def _ibp(self: nn.Sequential, lower: torch.Tensor, upper: torch.Tensor, pre: bool = False):
+    def _ibp(self: nn.Sequential, lower: torch.Tensor, upper: torch.Tensor, pre: bool = False) -> Union[IntervalBounds, LayerBounds]:
         with notnull(getattr(self, '_pyro_context', None)):
-            LBs, UBs = [], []
+            layer_bounds = []
 
             for i, module in enumerate(self):
                 if not hasattr(module, 'ibp'):
@@ -47,13 +50,12 @@ def ibp_sequential(class_or_obj):
                     ibp(module)
 
                 if pre:
-                    LBs.append(lower)
-                    UBs.append(upper)
+                    layer_bounds.append((lower, upper))
 
                 lower, upper = module.ibp(lower, upper)
 
             if pre:
-                return LBs, UBs
+                return layer_bounds
             else:
                 return lower, upper
 
@@ -63,13 +65,13 @@ def ibp_sequential(class_or_obj):
 
 def ibp_linear(class_or_obj):
     @torch.no_grad()
-    def ibp(self: nn.Linear, lower: torch.Tensor, upper: torch.Tensor):
+    def ibp(self: nn.Linear, lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
         with notnull(getattr(self, '_pyro_context', None)):
             mid = (lower + upper) / 2
             diff = (upper - lower) / 2
 
             weight = self.weight
-            abs_weight = torch.abs(weight)
+            abs_weight = weight.abs()
             bias = self.bias
 
             if weight.dim() == 2:
@@ -97,7 +99,7 @@ def ibp_linear(class_or_obj):
 
 def ibp_activation(class_or_obj):
     @torch.no_grad()
-    def ibp(self: nn.Module, lower: torch.Tensor, upper: torch.Tensor):
+    def ibp(self: nn.Module, lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
         with notnull(getattr(self, '_pyro_context', None)):
             return self(lower), self(upper)
 

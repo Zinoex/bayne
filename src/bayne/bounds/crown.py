@@ -1,317 +1,223 @@
-from typing import Callable, Tuple
+from typing import Optional, Tuple
 
 import torch
 from torch import nn
 
-from bayne.bounds.util import notnull, add_method
+from .alpha_beta import alpha_beta
+from .surrogate import SurrogateLinear, surrogate_model
+from .util import notnull, add_method, LinearBounds, LayerBounds, AlphaBetas, IntervalBounds, LinearBound, AlphaBeta, \
+    WeightBias
 
 
-def crown(model):
+def crown(model: nn.Sequential):
     @torch.no_grad()
-    def crown(self: nn.Sequential, lower, upper):
-        LBs, UBs = [lower], [upper]
+    def crown_linear(self: nn.Sequential, lower: torch.Tensor, upper: torch.Tensor) -> LinearBounds:
+        self = surrogate_model(self)
 
-        modules = surrogate_model(self)
+        alpha_beta(self)
+        subnetwork_crown(self)
 
-        for i in range(1, len(modules)):
-            subnetwork = modules[:i]
-            lb, ub = subnetwork_crown(subnetwork, LBs, UBs, lower.device)
-            LBs.append(lb)
-            UBs.append(ub)
+        alpha_betas = []
 
-            batch_size = LBs[0].size(0)
+        for i in range(len(self)):
+            # We do this wrt. next layer because if the next layer is linear, we can skip this iteration
+            b = self[i].subnetwork_crown(self[:i], alpha_betas, (lower, upper))
+            ab = self[i].alpha_beta(b)
+            alpha_betas.append(ab)
 
-        alpha, beta = alpha_beta_sequential(modules, LBs, UBs)
-        bounds = linear_bounds(modules, alpha, beta, batch_size, lower.device)
+        batch_size = lower.size(0)
+        out_size = output_size(lower.size(-1), self)
+        bounds = linear_bounds(self, alpha_betas, batch_size, out_size, lower.device)
 
         return bounds
 
-    add_method(model, 'crown', crown)
+    add_method(model, 'crown_linear', crown_linear)
+
+    @torch.no_grad()
+    def crown_interval(self: nn.Sequential, lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
+        bounds = crown_linear(self, lower, upper)
+        return interval_bounds(bounds, (lower, upper))
+
+    add_method(model, 'crown_interval', crown_interval)
+
+    model = alpha_beta(model)
 
     return model
 
 
-def surrogate_model(model):
-    with notnull(getattr(model, '_pyro_context', None)):
-        layers = []
-
-        for module in model:
-            with notnull(getattr(module, '_pyro_context', None)):
-                if isinstance(module, nn.Linear):
-                    layers.append(SurrogateLinear(module.weight, module.bias))
-                else:
-                    layers.append(module)
-
-        return layers
+def subnetwork_crown(model):
+    if isinstance(model, nn.Sequential):
+        return subnetwork_crown_sequential(model)
+    elif isinstance(model, (SurrogateLinear, nn.Linear)):
+        return subnetwork_crown_linear(model)
+    else:
+        return subnetwork_crown_activation(model)
 
 
-class SurrogateLinear:
-    def __init__(self, weight, bias):
-        self.weight = weight
-        self.bias = bias
-        self.out_features = weight.size(-2)
+def subnetwork_crown_sequential(model: nn.Sequential):
+    for module in model:
+        subnetwork_crown(module)
 
 
-def subnetwork_crown(model, LBs, UBs, device):
-    batch_size = LBs[0].size(0)
+def subnetwork_crown_linear(class_or_obj):
+    def subnetwork_crown(self: nn.Linear, model: nn.Sequential, layer_bounds: LayerBounds, input_bounds: IntervalBounds) -> Optional[IntervalBounds]:
+        return None
 
-    alpha, beta = alpha_beta_sequential(model, LBs, UBs)
-    bounds = linear_bounds(model, alpha, beta, batch_size, device)
-
-    return interval_bounds(bounds, LBs[0], UBs[0])
+    add_method(class_or_obj, 'subnetwork_crown', subnetwork_crown)
+    return class_or_obj
 
 
-def interval_bounds(bounds, lower, upper):
+def subnetwork_crown_activation(class_or_obj):
+    def subnetwork_crown(self: nn.Module, model: nn.Sequential, alpha_betas: AlphaBetas, input_bounds: IntervalBounds) -> IntervalBounds:
+        device = input_bounds[0].device
+        batch_size = input_bounds[0].size(0)
+        out_size = output_size(input_bounds[0].size(-1), model)
+        bounds = linear_bounds(model, alpha_betas, batch_size, out_size, device)
+
+        return interval_bounds(bounds, input_bounds)
+
+    add_method(class_or_obj, 'subnetwork_crown', subnetwork_crown)
+    return class_or_obj
+
+
+def interval_bounds(bounds: LinearBounds, input_bounds: IntervalBounds) -> IntervalBounds:
     (Omega_0, Omega_accumulator), (Gamma_0, Gamma_accumulator) = bounds
 
+    lower, upper = input_bounds
     lower, upper = lower.unsqueeze(-1), upper.unsqueeze(-1)
 
     # We can do this instead of finding the Q-norm, as we only deal with perturbation over a hyperrectangular input,
-    # and not a B_p(epsilon) ball
+    # and not an arbitrary B_p(epsilon) ball
+    # This is essentially:
+    # - min_x Omega_0 @ x + Omega_accumulator
+    # - max_x Gamma_0 @ x + Gamma_accumulator
+
     mid = (lower + upper) / 2
     diff = (upper - lower) / 2
 
-    min_Omega_x = (torch.matmul(Omega_0, mid) - torch.matmul(torch.abs(Omega_0), diff))[..., 0]
-    max_Gamma_x = (torch.matmul(Gamma_0, mid) + torch.matmul(torch.abs(Gamma_0), diff))[..., 0]
+    min_Omega_x = (Omega_0.matmul(mid) - Omega_0.abs().matmul(diff))[..., 0]
+    max_Gamma_x = (Gamma_0.matmul(mid) + Gamma_0.abs().matmul(diff))[..., 0]
 
     return min_Omega_x + Omega_accumulator, max_Gamma_x + Gamma_accumulator
 
 
-def alpha_beta_sequential(model, LBs, UBs):
-    alpha, beta = [], []
-
-    for module, LB, UB in zip(model, LBs, UBs):
-        assert torch.all(LB <= UB + 1e-6)
-
-        n = UB <= 0
-        p = 0 <= LB
-        np = (LB < 0) & (0 < UB)
-
-        if isinstance(module, nn.ReLU):
-            a, b = alpha_beta_relu(LB, UB, n, p, np)
-        elif isinstance(module, nn.Sigmoid):
-            a, b = alpha_beta_sigmoid(LB, UB, n, p, np)
-        elif isinstance(module, nn.Tanh):
-            a, b = alpha_beta_tanh(LB, UB, n, p, np)
-        else:
-            a, b = (None, None), (None, None)
-
-        alpha.append(a)
-        beta.append(b)
-
-    return alpha, beta
-
-
-def alpha_beta_relu(LB, UB, n, p, np, adaptive_relu=True):
-    alpha_lower_k = torch.zeros_like(LB)
-    alpha_upper_k = torch.zeros_like(LB)
-    beta_lower_k = torch.zeros_like(LB)
-    beta_upper_k = torch.zeros_like(LB)
-
-    alpha_lower_k[n] = 0
-    alpha_upper_k[n] = 0
-    beta_lower_k[n] = 0
-    beta_upper_k[n] = 0
-
-    alpha_lower_k[p] = 1
-    alpha_upper_k[p] = 1
-    beta_lower_k[p] = 0
-    beta_upper_k[p] = 0
-
-    LB, UB = LB[np], UB[np]
-
-    z = UB / (UB - LB)
-    if adaptive_relu:
-        a = (UB >= torch.abs(LB)).to(torch.float)
-    else:
-        a = z
-
-    alpha_lower_k[np] = a
-    alpha_upper_k[np] = z
-    beta_lower_k[np] = 0
-    beta_upper_k[np] = -LB * z
-
-    return (alpha_lower_k, alpha_upper_k), (beta_lower_k, beta_upper_k)
-
-
-def alpha_beta_sigmoid(LB, UB, n, p, np):
-    def derivative(d):
-        return torch.sigmoid(d) * (1 - torch.sigmoid(d))
-
-    return alpha_beta_general(LB, UB, n, p, np, torch.sigmoid, derivative)
-
-
-def alpha_beta_tanh(LB, UB, n, p, np):
-    def derivative(d):
-        return 1 - torch.tanh(d) ** 2
-
-    return alpha_beta_general(LB, UB, n, p, np, torch.tanh, derivative)
-
-
-def alpha_beta_general(LB, UB, n, p, np, func, derivative):
-    alpha_lower_k = torch.zeros_like(LB)
-    alpha_upper_k = torch.zeros_like(LB)
-    beta_lower_k = torch.zeros_like(LB)
-    beta_upper_k = torch.zeros_like(LB)
-
-    LB_act, UB_act = func(LB), func(UB)
-    LB_prime, UB_prime = derivative(LB), derivative(UB)
-
-    d = (LB + UB) * 0.5  # Let d be the midpoint of the two bounds
-    d_act = func(d)
-    d_prime = derivative(d)
-
-    slope = (UB_act - LB_act) / (UB - LB)
-
-    # Negative regime
-    alpha_lower_k[n] = d_prime[n]
-    alpha_upper_k[n] = slope[n]
-    beta_lower_k[n] = d_act[n] - alpha_lower_k[n] * d[n]
-    beta_upper_k[n] = UB_act[n] - alpha_upper_k[n] * UB[n]
-
-    # Positive regime
-    alpha_lower_k[p] = slope[p]
-    alpha_upper_k[p] = d_prime[p]
-    beta_lower_k[p] = LB_act[p] - alpha_lower_k[p] * LB[p]
-    beta_upper_k[p] = d_act[p] - alpha_upper_k[p] * d[p]
-
-    #################
-    # Crossing zero #
-    #################
-    # Upper
-    UB_prime_at_LB = UB_prime * (LB - UB) + UB_act
-    direct_upper = np & (UB_prime_at_LB <= 0)
-    implicit_upper = np & (UB_prime_at_LB > 0)
-
-    alpha_upper_k[direct_upper] = slope[direct_upper]
-
-    def f_upper(d):
-        a_slope = (func(d) - func(LB[implicit_upper])) / (d - LB[implicit_upper])
-        a_derivative = derivative(d)
-        return a_slope - a_derivative
-
-    d_upper = bisection(torch.zeros_like(UB[implicit_upper]), UB[implicit_upper], f_upper)
-
-    alpha_upper_k[implicit_upper] = derivative(d_upper[0])
-    beta_upper_k[np] = LB_act[np] - alpha_upper_k[np] * LB[np]
-
-    # Lower
-    LB_prime_at_UB = LB_prime * (UB - LB) + LB_act
-    direct_lower = np & (LB_prime_at_UB >= 0)
-    implicit_lower = np & (LB_prime_at_UB < 0)
-
-    alpha_lower_k[direct_lower] = slope[direct_lower]
-
-    def f_lower(d):
-        a_slope = (func(UB[implicit_lower]) - func(d)) / (UB[implicit_lower] - d)
-        a_derivative = derivative(d)
-        return a_derivative - a_slope
-
-    d_lower = bisection(LB[implicit_lower], torch.zeros_like(LB[implicit_lower]), f_lower)
-
-    alpha_lower_k[implicit_lower] = derivative(d_lower[1])
-    beta_lower_k[np] = UB_act[np] - alpha_lower_k[np] * UB[np]
-
-    return (alpha_lower_k, alpha_upper_k), (beta_lower_k, beta_upper_k)
-
-
-def bisection(l: torch.Tensor, h: torch.Tensor, f: Callable[[torch.Tensor], torch.Tensor], num_iter=20) -> Tuple[torch.Tensor, torch.Tensor]:
-    midpoint = (l + h) / 2
-
-    for _ in range(num_iter):
-        y = f(midpoint)
-
-        l[y <= 0] = midpoint[y <= 0]
-        h[y > 0] = midpoint[y > 0]
-
-        midpoint = (l + h) / 2
-
-    return l, h
-
-
-def linear_bounds(model, alpha, beta, batch_size, device):
-    model = surrogate_model(model)
-
+def linear_bounds(model: nn.Sequential, alpha_betas: AlphaBetas, batch_size: int, out_size: int, device: torch.device) -> LinearBounds:
     # Compute bounds as two iterations to reduce memory consumption by half
-    return oneside_linear_bound(model, alpha, beta, batch_size, device, act_lower), \
-           oneside_linear_bound(model, alpha, beta, batch_size, device, act_upper)
+    return oneside_linear_bound(model, alpha_betas, batch_size, out_size, device, lower=True), \
+           oneside_linear_bound(model, alpha_betas, batch_size, out_size, device, lower=False)
 
 
-def oneside_linear_bound(model, alpha, beta, batch_size, device, act_fn):
-    out_size = output_size(model)
-
+def oneside_linear_bound(model: nn.Sequential, alpha_betas: AlphaBetas, batch_size: int, out_size: int, device: torch.device, **kwargs) -> LinearBound:
     W_tilde = torch.eye(out_size, device=device).unsqueeze(0).expand(batch_size, out_size, out_size)
     acc = 0
 
     # List is necessary around zip to allow reversing
-    for module, (al_k, au_k), (bl_k, bu_k) in reversed(list(zip(model, alpha, beta))):
+    for module, alpha_beta in reversed(list(zip(model, alpha_betas))):
         with notnull(getattr(module, '_pyro_context', None)):
-            if isinstance(module, (SurrogateLinear, nn.Linear)):
-                W_tilde, bias = linear(W_tilde, module)
-                acc = acc + bias
-            elif isinstance(module, (nn.ReLU, nn.Tanh, nn.Sigmoid)):
-                W_tilde, bias = act_fn(W_tilde, al_k, au_k, bl_k, bu_k)
-                acc = acc + bias
-            else:
-                raise NotImplemented()
+            if not hasattr(module, 'crown_backward'):
+                # Decorator also adds the method inplace.
+                crown_backward(module)
+
+            W_tilde, bias = module.crown_backward(W_tilde, alpha_beta, **kwargs)
+            acc = acc + bias
 
     return W_tilde, acc
 
 
-def output_size(model):
-    for module in reversed(model):
-        if isinstance(module, (SurrogateLinear, nn.Linear)):
-            return module.out_features
+def crown_backward(class_or_obj):
+    types = {
+        nn.Linear: crown_backward_linear,
+        SurrogateLinear: crown_backward_linear,
+        nn.ReLU: crown_backward_activation,
+        nn.Sigmoid: crown_backward_activation,
+        nn.Tanh: crown_backward_activation
+    }
+
+    for layer_type, crown_backward_fun in types.items():
+        if isinstance(class_or_obj, layer_type) or \
+                (isinstance(class_or_obj, type) and issubclass(class_or_obj, layer_type)):
+            return crown_backward_fun(class_or_obj)
+
+    raise NotImplementedError('Selected type of layer not supported')
 
 
-def linear(W_tilde, module):
-    bias = module.bias
-    weight = module.weight
+def crown_backward_linear(class_or_obj):
+    def crown_backward(self: nn.Linear, W_tilde: torch.Tensor, alpha_beta: AlphaBeta, **kwargs) -> WeightBias:
+        bias = self.bias
+        weight = self.weight
 
-    if weight.dim() == 2:
-        W_tilde_new = torch.matmul(W_tilde, weight)
-    else:
-        if W_tilde.dim() == 3:
-            W_tilde = W_tilde.unsqueeze(0)
+        if bias is None:
+            bias_acc = 0
+        elif bias.dim() == 1:
+            bias_acc = W_tilde.matmul(bias)
+        else:
+            bias = bias.view(bias.size(0), 1, bias.size(-1), 1)
+            bias_acc = W_tilde.matmul(bias)[..., 0]
 
-        W_tilde_new = torch.matmul(W_tilde, weight.unsqueeze(1))
+        if weight.dim() == 2:
+            W_tilde = W_tilde.matmul(weight)
+        else:
+            if W_tilde.dim() == 3:
+                W_tilde = W_tilde.unsqueeze(0)
 
-    if bias is None:
-        bias_acc = 0
-    elif bias.dim() == 1:
-        bias_acc = torch.matmul(W_tilde, bias)
-    else:
-        bias = bias.view(bias.size(0), 1, bias.size(-1), 1)
-        bias_acc = torch.matmul(W_tilde, bias)[..., 0]
+            W_tilde = W_tilde.matmul(weight.unsqueeze(1))
 
-    return W_tilde_new, bias_acc
+        return W_tilde, bias_acc
+
+    add_method(class_or_obj, 'crown_backward', crown_backward)
+    return class_or_obj
 
 
-def act_lower(Omega_tilde, al_k, au_k, bl_k, bu_k):
+def crown_backward_activation(class_or_obj):
+    def crown_backward(self: nn.Module, W_tilde: torch.Tensor, alpha_beta: AlphaBeta, lower: bool = True, **kwargs) -> WeightBias:
+        if lower:
+            return act_lower(W_tilde, alpha_beta)
+        else:
+            return act_upper(W_tilde, alpha_beta)
+
+    add_method(class_or_obj, 'crown_backward', crown_backward)
+    return class_or_obj
+
+
+def output_size(input_size: int, model: nn.Sequential) -> int:
+    out_size = input_size
+
+    for module in model:
+        if isinstance(module, (nn.Linear, SurrogateLinear)):
+            out_size = module.out_features
+
+    return out_size
+
+
+def act_lower(Omega_tilde: torch.Tensor, alpha_beta: AlphaBeta) -> WeightBias:
+    (al_k, au_k), (bl_k, bu_k) = alpha_beta
+
     bias = torch.sum(Omega_tilde * _theta(Omega_tilde, bl_k, bu_k), dim=-1)
     Omega_tilde = Omega_tilde * _omega(Omega_tilde, al_k, au_k)
 
     return Omega_tilde, bias
 
 
-def _theta(omega_weight, beta_lower, beta_upper):
-    return torch.where(omega_weight < 0, beta_upper.unsqueeze(-2), beta_lower.unsqueeze(-2))
+def _theta(Omega_tilde: torch.Tensor, beta_lower: torch.Tensor, beta_upper: torch.Tensor) -> torch.Tensor:
+    return torch.where(Omega_tilde < 0, beta_upper.unsqueeze(-2), beta_lower.unsqueeze(-2))
 
 
-def _omega(omega_weight, alpha_lower, alpha_upper):
-    return torch.where(omega_weight < 0, alpha_upper.unsqueeze(-2), alpha_lower.unsqueeze(-2))
+def _omega(Omega_tilde: torch.Tensor, alpha_lower: torch.Tensor, alpha_upper: torch.Tensor) -> torch.Tensor:
+    return torch.where(Omega_tilde < 0, alpha_upper.unsqueeze(-2), alpha_lower.unsqueeze(-2))
 
 
-def act_upper(Gamma_tilde, al_k, au_k, bl_k, bu_k):
+def act_upper(Gamma_tilde: torch.Tensor, alpha_beta: AlphaBeta) -> WeightBias:
+    (al_k, au_k), (bl_k, bu_k) = alpha_beta
+
     bias = torch.sum(Gamma_tilde * _delta(Gamma_tilde, bl_k, bu_k), dim=-1)
     Gamma_tilde = Gamma_tilde * _lambda(Gamma_tilde, al_k, au_k)
 
     return Gamma_tilde, bias
 
 
-def _delta(gamma_weight, beta_lower, beta_upper):
-    return torch.where(gamma_weight < 0, beta_lower.unsqueeze(-2), beta_upper.unsqueeze(-2))
+def _delta(Gamma_tilde: torch.Tensor, beta_lower: torch.Tensor, beta_upper: torch.Tensor) -> torch.Tensor:
+    return torch.where(Gamma_tilde < 0, beta_lower.unsqueeze(-2), beta_upper.unsqueeze(-2))
 
 
-def _lambda(gamma_weight, alpha_lower, alpha_upper):
-    return torch.where(gamma_weight < 0, alpha_lower.unsqueeze(-2), alpha_upper.unsqueeze(-2))
+def _lambda(Gamma_tilde: torch.Tensor, alpha_lower: torch.Tensor, alpha_upper: torch.Tensor) -> torch.Tensor:
+    return torch.where(Gamma_tilde < 0, alpha_lower.unsqueeze(-2), alpha_upper.unsqueeze(-2))
