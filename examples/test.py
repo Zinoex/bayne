@@ -18,7 +18,7 @@ def plot_bounds(model, device, label):
     bound_indices = torch.arange(0, 1000)
 
     lower_ibp, upper_ibp = timer(model.func_index)(model.ibp, bound_indices, lower_x, upper_x)
-    lower_lbp, upper_lbp = timer(model.func_index)(model.crown, bound_indices, lower_x, upper_x)
+    lower_lbp, upper_lbp = timer(model.func_index)(model.crown_linear, bound_indices, lower_x, upper_x)
 
     sample_to_plot = 900
 
@@ -56,7 +56,8 @@ def plot_bounds(model, device, label):
     plt.title(f'Bound propagation')
     plt.legend()
 
-    plt.savefig(f'visualization/{label}_lbp.png', dpi=300)
+    plt.show()
+    # plt.savefig(f'visualization/{label}_lbp.png', dpi=300)
 
 
 def plot_bnn(model, device, label):
