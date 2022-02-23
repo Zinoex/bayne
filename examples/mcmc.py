@@ -15,36 +15,36 @@ from examples.test import test
 ################################################################
 
 
-def train(model, device):
-    dataset = NoisySineDataset()
+def train(model, args):
+    dataset = NoisySineDataset(dim=args.dim)
     dataloader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=0)
 
     X, y = next(iter(dataloader))
-    X, y = X.to(device), y.to(device)
+    X, y = X.to(args.device), y.to(args.device)
 
-    model.sample(X, y, num_samples=1000, reject=200)
+    model.sample(X, y, num_samples=100, reject=200)
 
 
 def main(args):
-    device = torch.device(args.device)
-
     net = crown(crown_ibp(ibp(PyroMCMCBNN(
-            PyroBatchLinear(1, 16),
+            PyroBatchLinear(args.dim, 16),
             PyroTanh(),
             PyroBatchLinear(16, 16),
             PyroTanh(),
             PyroBatchLinear(16, 1),
-            sigma=0.2,
+            sigma=0.1,
             num_steps=100
-    )))).to(device)
+    )))).to(args.device)
 
-    train(net, device)
-    test(net, device, 'MCMC')
+    train(net, args)
+    test(net, args)
 
 
 def parse_arguments():
     parser = ArgumentParser()
-    parser.add_argument('--device', choices=['cuda', 'cpu'], default='cuda', help='Select device for tensor operations')
+    parser.add_argument('--device', choices=list(map(torch.device, ['cuda', 'cpu'])), type=torch.device, default='cuda',
+                        help='Select device for tensor operations')
+    parser.add_argument('--dim', choices=[1, 2], type=int, default=1, help='Dimensionality of the noisy sine')
 
     return parser.parse_args()
 
