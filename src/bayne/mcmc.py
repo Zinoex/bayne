@@ -14,6 +14,14 @@ import pyro
 logger = logging.getLogger(__file__)
 
 
+class Laplace(torch.distributions.Laplace, dist.torch_distribution.TorchDistributionMixin):
+    """
+    See https://arxiv.org/pdf/2102.06571.pdf for why a Laplace distribution prior is better
+    than a Gaussian prior
+    """
+    pass
+
+
 class PyroBatchLinear(nn.Linear, PyroModule):
     def __init__(self, in_features: int, out_features: int, bias: bool = True, device=None, dtype=None, weight_prior=None, bias_prior=None) -> None:
         # While calling super().__init__() creates the weights and we overwrite them later, it's just easier this way,
@@ -22,12 +30,12 @@ class PyroBatchLinear(nn.Linear, PyroModule):
         super(PyroBatchLinear, self).__init__(in_features, out_features, bias, device, dtype)
 
         if weight_prior is None:
-            weight_prior = dist.Normal(torch.as_tensor(0.0, device=device), torch.as_tensor(1.0, device=device)) \
+            weight_prior = Laplace(torch.as_tensor(0.0, device=device), torch.as_tensor(0.025, device=device)) \
                                             .expand(self.weight.shape) \
                                             .to_event(self.weight.dim())
 
         if bias and bias_prior is None:
-            bias_prior = dist.Normal(torch.as_tensor(0.0, device=device), torch.as_tensor(0.5, device=device)) \
+            bias_prior = Laplace(torch.as_tensor(0.0, device=device), torch.as_tensor(0.025, device=device)) \
                                             .expand(self.bias.shape) \
                                             .to_event(self.bias.dim())
 
