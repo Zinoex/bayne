@@ -6,7 +6,7 @@ from torch import nn
 from .alpha_beta import alpha_beta
 from .surrogate import SurrogateLinear, surrogate_model
 from .util import notnull, add_method, LinearBounds, LayerBounds, AlphaBetas, IntervalBounds, LinearBound, AlphaBeta, \
-    WeightBias
+    WeightBias, validate_affine
 
 
 def crown(model: nn.Sequential):
@@ -28,6 +28,8 @@ def crown(model: nn.Sequential):
         batch_size = lower.size(0)
         out_size = output_size(lower.size(-1), self)
         bounds = linear_bounds(self, alpha_betas, batch_size, out_size, lower.device)
+
+        validate_affine(self, lower, upper, bounds)
 
         return bounds
 
