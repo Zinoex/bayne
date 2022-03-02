@@ -63,42 +63,67 @@ def plot_bounds(model, device, label):
 def plot_bnn(model, device, label):
     num_samples = 1000
 
+
+
+@torch.no_grad()
+def plot_bounds(model, args):
+    if args.dim == 1:
+        plot_bounds_1d(model, args)
+    elif args.dim == 2:
+        plot_bounds_2d(model, args)
+    else:
+        raise NotImplementedError()
+
+
+def evaluate(model, args):
     criterion = MSELoss()
 
-    dataset = NoisySineDataset()
-    dataloader = DataLoader(dataset, batch_size=len(dataset), num_workers=0)
-    X_train, y_train = next(iter(dataloader))
-    X, y = X_train.to(device), y_train.to(device)
+    dataset = NoisySineDataset(dim=args.dim)
+    X_train, y_train = dataset[:]
+    X, y = X_train.to(args.device), y_train.to(args.device)
 
-    y_mean = timer(model.predict_mean)(X, num_samples=num_samples)
+    y_mean = timer(model.predict_mean)(X, num_samples=model.mcmc.num_samples)
     avg_loss = criterion(y_mean, y)
 
     print(f'Average MSE: {avg_loss.item()}')
 
-    X_test = torch.linspace(-2.0, 2.0, 1000).view(-1, 1).to(device)
-    y_dist = timer(model.predict_dist)(X_test, num_samples=num_samples)
-    X_test, y_dist = X_test[..., 0].cpu().numpy(), y_dist[..., 0].cpu()
 
-    y_mean = y_dist.mean(0).numpy()
-    y_std = y_dist.std(0).numpy()
+def plot_bnn(model, args):
+    dataset = NoisySineDataset(dim=args.dim)
+    X_train, y_train = dataset[:]
 
-    plt.clf()
+    X_test = torch.linspace(-2.0, 2.0, 1000).view(-1, 1).to(args.device)
+    y_dist = timer(model.predict_dist)(X_test, num_samples=model.mcmc.num_samples)
+    X_test, y_dist = X_test[..., 0].cpu(), y_dist[..., 0].cpu()
+
+    y_mean = y_dist.mean(0)
+    y_std = y_dist.std(0)
+
     plt.figure(figsize=(6.4 * 2, 4.8 * 2))
 
     plt.ylim(-4, 4)
 
-    plt.plot(X_test, y_mean, 'r-', label='Predictive mean')
-    plt.scatter(X_train.numpy(), y_train.numpy(), marker='+', label='Training data')
-    plt.fill_between(X_test.ravel(), y_mean + y_std * 3, y_mean - y_std * 3, alpha=0.5, label='Uncertainty')
+    for i in range(y_dist.size(0)):
+        plt.plot(X_test, y_dist[i], color='y', alpha=0.1, label='Uncertainty' if i == 0 else None)
 
-    plt.title(f'{label} BNN prediction')
+    plt.plot(X_test, y_mean, 'r-', label='Predictive mean')
+    plt.scatter(X_train[::4], y_train[::4], marker='+', color='b', label='Training data')
+    # plt.fill_between(X_test.ravel(), y_mean + y_std * 3, y_mean - y_std * 3, alpha=0.5, label='Uncertainty')
+
+    plt.title('MCMC BNN prediction')
     plt.legend()
 
-    plt.savefig(f'visualization/{label}_bnn.png', dpi=300)
+    plt.savefig('visualization/mcmc_bnn.png', dpi=300)
+    plt.show()
 
 
 @torch.no_grad()
-def test(model, device, label):
+def test(model, args):
     os.makedirs('visualization', exist_ok=True)
-    plot_bnn(model, device, label)
-    plot_bounds(model, device, label)
+
+    evaluate(model, args)
+
+    if args.dim == 1:
+        plot_bnn(model, args)
+
+    plot_bounds(model, args)

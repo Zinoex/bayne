@@ -1,6 +1,7 @@
 import logging
 
 import torch
+from pyro.distributions import Normal
 from torch import nn, distributions
 import torch.nn.functional as F
 
@@ -30,12 +31,12 @@ class PyroBatchLinear(nn.Linear, PyroModule):
         super(PyroBatchLinear, self).__init__(in_features, out_features, bias, device, dtype)
 
         if weight_prior is None:
-            weight_prior = Laplace(torch.as_tensor(0.0, device=device), torch.as_tensor(0.025, device=device)) \
+            weight_prior = Normal(torch.as_tensor(0.0, device=device), torch.as_tensor(1.0, device=device)) \
                                             .expand(self.weight.shape) \
                                             .to_event(self.weight.dim())
 
         if bias and bias_prior is None:
-            bias_prior = Laplace(torch.as_tensor(0.0, device=device), torch.as_tensor(0.025, device=device)) \
+            bias_prior = Normal(torch.as_tensor(0.0, device=device), torch.as_tensor(1.0, device=device)) \
                                             .expand(self.bias.shape) \
                                             .to_event(self.bias.dim())
 
@@ -89,13 +90,13 @@ class BNNNotSampledError(Exception):
 
 
 class PyroMCMCBNN(nn.Sequential, PyroModule):
-    def __init__(self, *args, sigma=1.0, step_size=1e-6, num_steps=50):
+    def __init__(self, *args, sigma=1.0, step_size=1e-6, num_steps=200):
         super().__init__(*args)
 
         self.sigma = sigma
 
-        # self.hmc_kernel = HMC(self, step_size=step_size, num_steps=num_steps, jit_compile=True, ignore_jit_warnings=True)
-        self.hmc_kernel = NUTS(self, step_size=step_size, full_mass=False, max_tree_depth=6, jit_compile=True, ignore_jit_warnings=True)
+        self.hmc_kernel = HMC(self, step_size=step_size, num_steps=num_steps, jit_compile=True, ignore_jit_warnings=True)
+        # self.hmc_kernel = NUTS(self, step_size=step_size, full_mass=False, max_tree_depth=8, jit_compile=True, ignore_jit_warnings=True)
         self.mcmc = None
 
     def forward(self, X, y=None):
@@ -108,7 +109,7 @@ class PyroMCMCBNN(nn.Sequential, PyroModule):
         return mean
 
     def sample(self, X, y, num_samples=200, reject=200):
-        self.mcmc = MCMC(self.hmc_kernel, num_samples=num_samples, warmup_steps=reject)
+        self.mcmc = MCMC(self.hmc_kernel, num_samples=num_samples, warmup_steps=reject, num_chains=8)
         self.mcmc.run(X, y)
 
     def func_index(self, func, sample_indices, *args, **kwargs):

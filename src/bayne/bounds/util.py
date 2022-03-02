@@ -82,6 +82,8 @@ def tensor_linspace(start, end, steps=10):
 
 
 def validate_affine(model: PyroMCMCBNN, lower: torch.Tensor, upper: torch.Tensor, linear: LinearBounds, num_points=10):
+    return
+
     # TODO: generalize validation to n-D
 
     points = tensor_linspace(lower, upper, num_points).view(lower.size(0), num_points, -1)

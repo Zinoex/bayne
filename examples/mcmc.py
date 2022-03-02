@@ -16,27 +16,26 @@ from examples.test import test
 
 
 def train(model, args):
-    dataset = NoisySineDataset(dim=args.dim)
-    dataloader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=0)
+    dataset = NoisySineDataset(dim=args.dim, train_size=2**12)
 
-    X, y = next(iter(dataloader))
+    X, y = dataset[:]
     X, y = X.to(args.device), y.to(args.device)
 
-    model.sample(X, y, num_samples=100, reject=200)
+    model.sample(X, y, num_samples=50, reject=200)
 
 
 def main(args):
     net = crown(crown_ibp(ibp(PyroMCMCBNN(
-            PyroBatchLinear(args.dim, 16),
+            PyroBatchLinear(args.dim, 64),
             PyroTanh(),
-            PyroBatchLinear(16, 16),
+            PyroBatchLinear(64, 64),
             PyroTanh(),
-            PyroBatchLinear(16, 1),
-            sigma=0.1,
-            num_steps=100
+            PyroBatchLinear(64, 1),
+            sigma=0.2
     )))).to(args.device)
 
     train(net, args)
+    net.state_dict()
     test(net, args)
 
 
