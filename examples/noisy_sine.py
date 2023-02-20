@@ -9,15 +9,17 @@ from torch.utils.data import TensorDataset
 def noise(train_size, sigma):
     dist1 = distributions.Normal(-0.4, sigma)
     dist2 = distributions.Normal(0.4, sigma)
-    # dist = distributions.Beta(0.5, sigma)
 
     train_size = (train_size,)
     return torch.cat([dist1.sample(train_size), dist2.sample(train_size)])
 
 
 def f_1d(train_size, sigma):
-    X = torch.linspace(-1.0, 1.0, train_size).repeat(2).view(-1, 1)
-    return X, torch.sin(2 * np.pi * X) + noise(train_size, sigma).view(-1, 1)
+    X = torch.linspace(-1.0, 1.0, train_size).view(-1, 1)
+    dist = distributions.Normal(0.0, sigma)
+    noise = dist.sample((train_size,))
+
+    return X, torch.sin(2 * np.pi * X) + noise.view(-1, 1)
 
 
 def f_2d(train_size, sigma):
