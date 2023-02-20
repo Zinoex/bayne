@@ -1,7 +1,6 @@
 import logging
 
 import torch
-from pyro.distributions import Normal
 from torch import nn, distributions
 import torch.nn.functional as F
 
@@ -31,12 +30,12 @@ class PyroBatchLinear(nn.Linear, PyroModule):
         super(PyroBatchLinear, self).__init__(in_features, out_features, bias, device, dtype)
 
         if weight_prior is None:
-            weight_prior = Normal(torch.as_tensor(0.0, device=device), torch.as_tensor(1.0, device=device)) \
+            weight_prior = dist.Normal(torch.as_tensor(0.0, device=device), torch.as_tensor(1.0, device=device)) \
                                             .expand(self.weight.shape) \
                                             .to_event(self.weight.dim())
 
         if bias and bias_prior is None:
-            bias_prior = Normal(torch.as_tensor(0.0, device=device), torch.as_tensor(1.0, device=device)) \
+            bias_prior = dist.Normal(torch.as_tensor(0.0, device=device), torch.as_tensor(1.0, device=device)) \
                                             .expand(self.bias.shape) \
                                             .to_event(self.bias.dim())
 
@@ -45,6 +44,9 @@ class PyroBatchLinear(nn.Linear, PyroModule):
         if bias:
             self.bias_prior = bias_prior
             self.bias = PyroSample(prior=self.bias_prior)
+        else:
+            self.bias_prior = None
+            self.bias = None
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         bias = self.bias
@@ -85,31 +87,29 @@ class PyroReLU(nn.ReLU, PyroModule):
     pass
 
 
+class PyroSequential(nn.Sequential, PyroModule):
+    def to(self, *args, **kwargs):
+        for module in self:
+            module.to(*args, **kwargs)
+
+        return self
+
+
 class BNNNotSampledError(Exception):
     pass
 
 
-class PyroMCMCBNN(nn.Sequential, PyroModule):
-    def __init__(self, *args, sigma=1.0, step_size=1e-6, num_steps=200):
-        super().__init__(*args)
+class AbstractMCMCBNN(PyroModule):
+    def __init__(self, model, step_size=1e-4, num_steps=10):
+        super().__init__()
+        self.model = model
 
-        self.sigma = sigma
-
-        self.hmc_kernel = HMC(self, step_size=step_size, num_steps=num_steps, jit_compile=True, ignore_jit_warnings=True)
-        # self.hmc_kernel = NUTS(self, step_size=step_size, full_mass=False, max_tree_depth=8, jit_compile=True, ignore_jit_warnings=True)
+        # self.hmc_kernel = HMC(self, step_size=step_size, num_steps=num_steps, jit_compile=True, ignore_jit_warnings=True)
+        self.hmc_kernel = NUTS(self, step_size=step_size, full_mass=True, max_tree_depth=8, jit_compile=True, ignore_jit_warnings=True)
         self.mcmc = None
 
-    def forward(self, X, y=None):
-        mean = super().forward(X)
-
-        if y is not None:
-            with pyro.plate("data", device=X.device):
-                obs = pyro.sample("obs", dist.Normal(mean, self.sigma), obs=y)
-
-        return mean
-
-    def sample(self, X, y, num_samples=200, reject=200):
-        self.mcmc = MCMC(self.hmc_kernel, num_samples=num_samples, warmup_steps=reject, num_chains=8)
+    def sample(self, X, y, num_samples=200, reject=200, num_chains=8):
+        self.mcmc = MCMC(self.hmc_kernel, num_samples=num_samples, warmup_steps=reject, num_chains=num_chains)
         self.mcmc.run(X, y)
 
     def func_index(self, func, sample_indices, *args, **kwargs):
@@ -161,10 +161,9 @@ class PyroMCMCBNN(nn.Sequential, PyroModule):
         return y.mean(0)
 
     def to(self, *args, **kwargs):
-        for module in self:
-            module.to(*args, **kwargs)
+        self.model.to(*args, **kwargs)
 
-        return super().to(*args, *kwargs)
+        return self
 
     def state_dict(self, *args, **kwargs):
         state_dict = super().state_dict(*args, **kwargs)
@@ -182,6 +181,33 @@ class PyroMCMCBNN(nn.Sequential, PyroModule):
             self.mcmc._samples = samples
 
         super().load_state_dict(state_dict, strict)
+
+
+class NormalLikelihoodMCMCBNN(AbstractMCMCBNN):
+    def __init__(self, model, sigma, *args, **kwargs):
+        super().__init__(model, *args, **kwargs)
+
+        self.sigma = sigma
+
+    def forward(self, X, y=None):
+        mean = self.model(X)
+
+        if y is not None:
+            with pyro.plate("data", device=X.device):
+                pyro.sample("y_hat", dist.Normal(mean, self.sigma), obs=y)
+
+        return mean
+
+
+class BernoulliLikelihoodMCMCBNN(AbstractMCMCBNN):
+    def forward(self, X, y=None):
+        p = self.model(X)
+
+        if y is not None:
+            with pyro.plate("data", device=X.device):
+                pyro.sample("y_hat", dist.Bernoulli(p), obs=y)
+
+        return p
 
 
 def select_samples_by_idx(samples, sample_indices, group_by_chain=False):
