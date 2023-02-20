@@ -9,21 +9,23 @@ import pandas as pd
 
 ########################################################
 # The dataset is a Kaggle weather history dataset where
-# the goal is to predict the temperature given apparent
-# temperature. They are closely related, so should yield
-# little uncertainty
+# the goal is to predict whether it will rain tomorrow
+# given sunshine hours, humidity, and rain today.
 #
-# https://www.kaggle.com/budincsevity/szeged-weather
+# https://www.kaggle.com/datasets/jsphyg/weather-dataset-rattle-package
 ########################################################
 from torch.utils.data import TensorDataset
 
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+DIR = os.path.dirname(__file__)
 
-df = pd.read_csv(os.path.join(BASE_DIR, 'data/weatherHistory.csv'))
-df = df[['Humidity', 'Apparent Temperature (C)']].astype(np.float32)
+df = pd.read_csv(os.path.join(DIR, 'data/weatherAUS.csv'))
+df = df.dropna()
+df['RainTomorrow'] = df['RainTomorrow'].replace({'Yes': True, 'No': False})
 
-X = df[['Humidity']].values
-y = df[['Apparent Temperature (C)']].values
+df = df[['Sunshine', 'Humidity9am', 'RainTomorrow']].astype(np.float32)
+
+X = df[['Sunshine', 'Humidity9am']].values
+y = df[['RainTomorrow']].values
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 

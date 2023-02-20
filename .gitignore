@@ -132,6 +132,6 @@ dmypy.json
 .idea
 
 # custom
-data
+examples/data
 examples/visualization
 src/pytorch-sphinx-theme
