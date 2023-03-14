@@ -1,10 +1,10 @@
 from argparse import ArgumentParser
 
 import torch
-from torch.nn import MSELoss, BCELoss
+from torch.nn import MSELoss, BCEWithLogitsLoss
 
-from bayne.mcmc import NormalLikelihoodMCMCBNN, PyroSequential, PyroBatchLinear, PyroTanh, BernoulliLikelihoodMCMCBNN, \
-    PyroSigmoid
+from bayne.mcmc import NormalLikelihoodMCMCBNN, PyroSequential, PyroBatchLinear, PyroTanh,\
+    BernoulliLogitsLikelihoodMCMCBNN
 from examples.noisy_sine import NoisySineDataset
 from examples.test import test
 from examples.weather import WeatherHistoryDataset
@@ -44,11 +44,10 @@ def main(args):
                 PyroTanh(),
                 PyroBatchLinear(64, 64),
                 PyroTanh(),
-                PyroBatchLinear(64, 1),
-                PyroSigmoid())
+                PyroBatchLinear(64, 1))
 
-        net = BernoulliLikelihoodMCMCBNN(model).to(args.device)
-        criterion = BCELoss()
+        net = BernoulliLogitsLikelihoodMCMCBNN(model).to(args.device)
+        criterion = BCEWithLogitsLoss()
     else:
         raise ValueError('Dataset not found')
 
