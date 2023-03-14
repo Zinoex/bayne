@@ -30,12 +30,12 @@ class PyroBatchLinear(nn.Linear, PyroModule):
         super(PyroBatchLinear, self).__init__(in_features, out_features, bias, device, dtype)
 
         if weight_prior is None:
-            weight_prior = dist.Normal(torch.as_tensor(0.0, device=device), torch.as_tensor(1.0, device=device)) \
+            weight_prior = dist.Normal(torch.as_tensor(0.0, device=device), torch.as_tensor(0.05, device=device)) \
                                             .expand(self.weight.shape) \
                                             .to_event(self.weight.dim())
 
         if bias and bias_prior is None:
-            bias_prior = dist.Normal(torch.as_tensor(0.0, device=device), torch.as_tensor(1.0, device=device)) \
+            bias_prior = dist.Normal(torch.as_tensor(0.0, device=device), torch.as_tensor(0.05, device=device)) \
                                             .expand(self.bias.shape) \
                                             .to_event(self.bias.dim())
 
