@@ -20,7 +20,7 @@ def train(model, dataset, args):
     X, y = dataset[:]
     X, y = X.to(args.device), y.to(args.device)
 
-    model.sample(X, y, num_samples=100, reject=20)
+    model.sample(X, y, num_samples=100, reject=50)
 
 
 def main(args):
