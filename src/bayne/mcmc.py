@@ -99,17 +99,24 @@ class BNNNotSampledError(Exception):
     pass
 
 
+def build_hmc_kernel(self, step_size=1e-4, num_steps=10):
+    return HMC(self, step_size=step_size, num_steps=num_steps, jit_compile=True, ignore_jit_warnings=True)
+
+
+def build_nuts_kernel(self, step_size=1e-4):
+    return NUTS(self, step_size=step_size, full_mass=True, max_tree_depth=8, jit_compile=True, ignore_jit_warnings=True)
+
+
 class AbstractMCMCBNN(PyroModule):
-    def __init__(self, model, step_size=1e-4, num_steps=10):
+    def __init__(self, model, kernel_builder=build_nuts_kernel):
         super().__init__()
         self.model = model
 
-        # self.hmc_kernel = HMC(self, step_size=step_size, num_steps=num_steps, jit_compile=True, ignore_jit_warnings=True)
-        self.hmc_kernel = NUTS(self, step_size=step_size, full_mass=True, max_tree_depth=8, jit_compile=True, ignore_jit_warnings=True)
+        self.kernel = kernel_builder(self)
         self.mcmc = None
 
     def sample(self, X, y, num_samples=200, reject=200, num_chains=8):
-        self.mcmc = MCMC(self.hmc_kernel, num_samples=num_samples, warmup_steps=reject, num_chains=num_chains)
+        self.mcmc = MCMC(self.kernel, num_samples=num_samples, warmup_steps=reject, num_chains=num_chains)
         self.mcmc.run(X, y)
 
     def func_index(self, func, sample_indices, *args, **kwargs):
@@ -177,7 +184,7 @@ class AbstractMCMCBNN(PyroModule):
             logger.warning('No samples in loaded BNN')
         else:
             num_samples = next(iter(samples.values())).size(1)
-            self.mcmc = MCMC(self.hmc_kernel, num_samples=num_samples, warmup_steps=0)
+            self.mcmc = MCMC(self.kernel, num_samples=num_samples, warmup_steps=0)
             self.mcmc._samples = samples
 
         super().load_state_dict(state_dict, strict)
