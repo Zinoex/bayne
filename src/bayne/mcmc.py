@@ -217,6 +217,17 @@ class BernoulliLikelihoodMCMCBNN(AbstractMCMCBNN):
         return p
 
 
+class BernoulliLogitsLikelihoodMCMCBNN(AbstractMCMCBNN):
+    def forward(self, X, y=None):
+        logits = self.model(X)
+
+        if y is not None:
+            with pyro.plate("data", device=X.device):
+                pyro.sample("y_hat", dist.Bernoulli(logits=logits), obs=y)
+
+        return logits
+
+
 def select_samples_by_idx(samples, sample_indices, group_by_chain=False):
     """
     Performs selection from given MCMC samples.
