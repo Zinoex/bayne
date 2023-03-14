@@ -12,8 +12,8 @@ def evaluate(model, dataset, criterion, args):
     X_train, y_train = dataset[:]
     X, y = X_train.to(args.device), y_train.to(args.device)
 
-    y_mean = timer(model.predict_mean)(X, num_samples=model.mcmc.num_samples)
-    avg_loss = criterion(y_mean, y)
+    y_dist = timer(model.predict_dist)(X, num_samples=model.mcmc.num_samples)
+    avg_loss = criterion(y_dist, y.unsqueeze(0).expand(y_dist.size(0), *y.size()))
 
     print(f'Average "loss": {avg_loss.item()}')
 
